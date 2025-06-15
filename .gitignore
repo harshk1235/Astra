@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.env
+.env
+
+# Virtual Environment
+venv/
+.env/
+.venv/
+
+# VS Code
+.vscode/
+
+# Credentials & Config
+config.json
+*.json
+*.pem
+*.key
+credentials.json
+
+# System files
+.DS_Store
+Thumbs.db
