@@ -29,7 +29,7 @@ class Donations(commands.Cog):
         self.sheet = self.gc.open_by_url(self.sheet_url).worksheet("Donations")
 
     @commands.command()
-    async def hello(self,ctx)
+    async def hello(self,ctx):
         await ctx.send("Hello from donations cog")
     
     @commands.command(name="donos")
