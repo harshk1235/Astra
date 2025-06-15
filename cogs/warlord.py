@@ -10,16 +10,19 @@ class WarlordCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+        cred_str = os.environ.get("CREDENTIALS_JSON")
+        cred_dict = json.loads(cred_str)
         # ✅ Setup Google Sheets client
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(cred_dict, scope)
         self.gc = gspread.authorize(creds)
 
         # ✅ Load sheet URL from config
-        with open("config.json", "r") as file:
-            config = json.load(file)
-            self.sheet_url = config.get("google_sheet_url")
+       # with open("config.json", "r") as file:
+        #    config = json.load(file)
+        #    self.sheet_url = config.get("google_sheet_url")
 
+        self.sheet_url = os.environ.get("GOOGLE_SHEET_URL")
         # ✅ Load emojis from emoji.json
         with open("emoji.json", "r", encoding="utf-8") as f:
             emoji_data = json.load(f)
