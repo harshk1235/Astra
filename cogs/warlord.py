@@ -2,7 +2,7 @@ import discord
 import os
 from discord.ext import commands
 from discord import app_commands
-
+from google.oauth2.service_account import Credentials
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
@@ -11,12 +11,12 @@ class WarlordCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-        cred_str = os.environ.get("CREDENTIALS_JSON")
-        cred_dict = json.loads(cred_str)
-        # ✅ Setup Google Sheets client
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(cred_dict, scope)
+        
+
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
         self.gc = gspread.authorize(creds)
+
 
         # ✅ Load sheet URL from config
        # with open("config.json", "r") as file:
