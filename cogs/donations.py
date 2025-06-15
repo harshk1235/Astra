@@ -8,14 +8,21 @@ class Donations(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        
+        cred_str = os.environ.get("CREDENTIALS_JSON")
+        cred_dict = json.loads(cred_str)
+        # ✅ Setup Google Sheets client
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(cred_dict, scope)
+        self.gc = gspread.authorize(creds)
+
+        self.sheet_url = os.environ.get("GOOGLE_SHEET_URL")
         # Google Sheets setup
-        with open("credentials.json", "r") as f:
-            creds = json.load(f)
-        self.gc = gspread.service_account_from_dict(creds)
-        with open("config.json", "r") as file:
-            config = json.load(file)
-            self.sheet_url = config.get("google_sheet_url")
+      #  with open("credentials.json", "r") as f:
+     #       creds = json.load(f)
+      #  self.gc = gspread.service_account_from_dict(creds)
+      #  with open("config.json", "r") as file:
+      #      config = json.load(file)
+      #      self.sheet_url = config.get("google_sheet_url")
         self.sheet = self.gc.open_by_url(self.sheet_url).worksheet("Donations")
 
     @commands.command(name="donos")
