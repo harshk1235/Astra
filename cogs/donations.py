@@ -10,7 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 class Donations(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
+    
         cred_str = os.environ.get("CREDENTIALS_JSON")
         cred_dict = json.loads(cred_str)
         # ✅ Setup Google Sheets client
@@ -28,6 +28,10 @@ class Donations(commands.Cog):
       #      self.sheet_url = config.get("google_sheet_url")
         self.sheet = self.gc.open_by_url(self.sheet_url).worksheet("Donations")
 
+    @commands.command()
+    async def hello(self,ctx)
+        await ctx.send("Hello from donations cog")
+    
     @commands.command(name="donos")
     @commands.has_permissions(administrator=True)
     async def donos_prefix(self, ctx):
