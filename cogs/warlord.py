@@ -73,4 +73,6 @@ class WarlordCog(commands.Cog):
             print("Error:", e)
             await interaction.response.send_message("An error occurred while retrieving stats info.", ephemeral=True)
 async def setup(bot: commands.Bot):
-    await bot.add_cog(WarlordCog(bot))
+    cog = WarlordCog(bot)
+    await bot.add_cog(cog)
+    bot.tree.add_command(cog.warstats)
