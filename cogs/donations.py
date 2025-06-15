@@ -5,18 +5,19 @@ from discord import app_commands
 import gspread
 import json
 from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 
 class Donations(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-        cred_str = os.environ.get("CREDENTIALS_JSON")
-        cred_dict = json.loads(cred_str)
-        # ✅ Setup Google Sheets client
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(cred_dict, scope)
+      
+
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
         self.gc = gspread.authorize(creds)
+
 
         self.sheet_url = os.environ.get("GOOGLE_SHEET_URL")
         # Google Sheets setup
