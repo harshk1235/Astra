@@ -78,4 +78,7 @@ class Donations(commands.Cog):
                 await source.response.send_message("Failed to fetch donation stats.")
 
 async def setup(bot):
-    await bot.add_cog(Donations(bot))
+    cog = Donations(bot)
+    await bot.add_cog(cog)
+    bot.tree.add_command(cog.donos)
+    
