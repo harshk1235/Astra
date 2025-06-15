@@ -39,7 +39,6 @@ class Donations(commands.Cog):
         await self.send_donos_embed(ctx)
 
     @app_commands.command(name="donos", description="Displays donation leaderboard")
-    @app_commands.checks.has_permissions(administrator=True)
     async def donos_slash(self, interaction: discord.Interaction):
         await self.send_donos_embed(interaction)
 
@@ -80,5 +79,4 @@ class Donations(commands.Cog):
 async def setup(bot):
     cog = Donations(bot)
     await bot.add_cog(cog)
-    bot.tree.add_command(cog.donos)
     
