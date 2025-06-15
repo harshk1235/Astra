@@ -1,10 +1,10 @@
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 import os
 
-load_dotenv()
-TOKEN = os.getenv("TOKEN")
+#load_dotenv()
+TOKEN = os.environ.get("TOKEN")
 
 # Define intents and bot setup
 intents = discord.Intents.default()
