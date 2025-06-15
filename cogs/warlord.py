@@ -75,4 +75,3 @@ class WarlordCog(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = WarlordCog(bot)
     await bot.add_cog(cog)
-    bot.tree.add_command(cog.warstats)
