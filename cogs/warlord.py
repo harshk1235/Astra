@@ -11,7 +11,7 @@ class WarlordCog(commands.Cog):
         self.bot = bot
 
         # Google Sheets setup
-        #scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         #creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
        
         cred_str = os.environ.get("CREDENTIALS_JSON")
