@@ -1,14 +1,13 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import logging
 import os
 
-# Bot token from environment
+# Bot token and owner ID
 TOKEN = os.environ.get("TOKEN")
-OWNER_ID = 440506087326744576  # 🔁 Replace with your Discord user ID
+OWNER_ID = 440506087326744576  # 🔁 Replace this with your real Discord user ID
 
-# Define intents and setup logging
+# Intents and logging
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -16,16 +15,15 @@ intents.members = True
 
 logging.basicConfig(level=logging.INFO)
 
-# Create the bot
+# Create bot
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree  # for convenience
+tree = bot.tree
 
-# Event: on_ready
+# Load cogs on startup
 @bot.event
 async def on_ready():
     logging.info(f"{bot.user} is online.")
 
-    # Load all cogs from /cogs
     for filename in os.listdir("./cogs"):
         if filename.endswith(".py"):
             cog_name = filename[:-3]
@@ -35,29 +33,22 @@ async def on_ready():
             except Exception as e:
                 logging.error(f"❌ Failed to load cog: {cog_name} — {e}")
 
-# Text command for testing
+# Basic text command
 @bot.command()
 async def ping(ctx):
     await ctx.send("Pong!")
 
-# Slash command for testing
-@tree.command(name="ping", description="Replies with pong")
-async def slash_ping(interaction: discord.Interaction):
-    await interaction.response.send_message("🏓 Pong!", ephemeral=True)
-
-# Owner-only sync command to register slash commands globally
-@tree.command(name="sync", description="Owner only: Sync global slash commands")
-async def sync_commands(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("❌ You must be the owner to use this command!", ephemeral=True)
+# Manual sync command (text-based, owner only)
+@bot.command()
+async def sync(ctx):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("❌ You must be the owner to use this command.")
         return
-    try:
-        await tree.sync()
-        await interaction.response.send_message("✅ Slash commands synced globally.", ephemeral=True)
-        logging.info("✅ Slash commands synced globally.")
-    except Exception as e:
-        logging.error(f"⚠️ Sync failed: {e}")
-        await interaction.response.send_message("❌ Sync failed.", ephemeral=True)
 
-# Run the bot
-bot.run(TOKEN)
+    try:
+        synced = await bot.tree.sync()
+        await ctx.send(f"✅ Synced {len(synced)} global slash command(s).")
+        logging.info(f"✅ Synced {len(synced)} global slash command(s).")
+    except Exception as e:
+        logging.error(f"⚠️ Slash sync failed: {e}")
+        await ctx.send("❌ Sync failed.")
