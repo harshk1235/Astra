@@ -4,6 +4,8 @@ import logging
 #from dotenv import load_dotenv
 import os
 
+intents = discord.Intents.default()
+intents.message_content = True
 intents.guilds = True
 intents.members = True
 
