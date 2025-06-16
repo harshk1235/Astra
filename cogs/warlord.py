@@ -46,7 +46,7 @@ class WarlordCog(commands.Cog):
             for row in data[1:]:
                 th = f"th{row[1]}"
                 emoji = self.emojis.get(th, "")
-                line = f"{emoji}<:blank_space:1229767163221381173}`{row[2]:^3}\t{row[3]:^3}\t{row[4]:>3}%\t {row[5]:>4}` \t {row[0]}\n"
+                line = f"{emoji}<:blank_space:1229767163221381173>`{row[2]:^3}\t{row[3]:^3}\t{row[4]:>3}%\t {row[5]:>4}` \t {row[0]}\n"
 
                 if len(body) + len(line) >= MAX_LENGTH - len(heading):
                     embed = discord.Embed(
