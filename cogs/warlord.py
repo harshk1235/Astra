@@ -37,30 +37,52 @@ class WarlordCog(commands.Cog):
             sheet = self.gc.open_by_url(self.sheet_url).worksheet("War Stats")
             data = sheet.get_all_values()
 
+            MAX_LENGTH = 4096
             heading = "<:blank_space:1229767163221381173><:blank_space:1229767163221381173>`Atk\tTrp\tH/R%\t Dest`\n\n"
             body = ""
+
+            embeds = []
 
             for row in data[1:]:
                 th = f"th{row[1]}"
                 emoji = self.emojis.get(th, "")
-                body += f"{emoji}<:blank_space:1229767163221381173>`{row[2]:^3}\t{row[3]:^3}\t{row[4]:>3}%\t {row[5]:>4}` \t {row[0]}\n"
+                line = f"{emoji}<:blank_space:1229767163221381173}`{row[2]:^3}\t{row[3]:^3}\t{row[4]:>3}%\t {row[5]:>4}` \t {row[0]}\n"
 
-            embed = discord.Embed(
-                title="🏆 War Leaderboard 🏆",
-                description="\n**Greetings, Clashers!**\n\nJoin us in celebrating the noble feats of our champions as we unveil the monthly war leaderboard for Phoenix Reborn\n\n"
-                            + heading + body,
-                color=0x000000
-            )
-            embed.set_footer(
-                text="Phoenix Reborn",
-                icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png"
-            )
+                if len(body) + len(line) >= MAX_LENGTH - len(heading):
+                    embed = discord.Embed(
+                        title="🏆 War Leaderboard 🏆" if not embeds else discord.Embed.Empty,
+                        description=heading + body if not embeds else body,
+                        color=0x000000
+                    )
+                    embed.set_footer(
+                        text="Phoenix Reborn",
+                        icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png"
+                    )
+                    embeds.append(embed)
+                    body = ""
 
-            await ctx.send(embed=embed)
+                body += line
+
+            # Add final embed for leftover lines
+            if body:
+                embed = discord.Embed(
+                    title="🏆 War Leaderboard 🏆" if not embeds else discord.Embed.Empty,
+                    description=heading + body if not embeds else body,
+                    color=0x000000
+                )
+                embed.set_footer(
+                    text="Phoenix Reborn",
+                    icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png"
+                )
+                embeds.append(embed)
+
+            for embed in embeds:
+                await channel.send(embed=embed)
 
         except Exception as e:
             print("Error in !warstats:", e)
             await ctx.send("❌ An error occurred while retrieving war stats.")
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(WarlordCog(bot))
