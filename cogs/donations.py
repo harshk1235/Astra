@@ -14,8 +14,13 @@ class Donations(commands.Cog):
     
       
 
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
+        #scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        #creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
+       
+        cred_str = os.environ.get("CREDENTIALS_JSON")
+        cred_dict = json.loads(cred_str)
+        creds = Credentials.from_service_account_info(cred_dict, scopes=scope)
+    
         self.gc = gspread.authorize(creds)
 
 
