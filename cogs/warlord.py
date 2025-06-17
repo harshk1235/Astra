@@ -33,25 +33,28 @@ class WarlordCog(commands.Cog):
         try:
             if channel is None:
                 channel = ctx.channel
-
+    
             sheet = self.gc.open_by_url(self.sheet_url).worksheet("War Stats")
             data = sheet.get_all_values()
-
+    
             MAX_LENGTH = 4096
+            intro = "\n**Greetings, Clashers!**\n\nJoin us in celebrating the noble feats of our champions as we unveil the monthly war leaderboard for Phoenix Reborn\n\n"
             heading = "<:blank_space:1229767163221381173><:blank_space:1229767163221381173>`Atk\tTrp\tH/R%\t Dest`\n\n"
             body = ""
-
             embeds = []
-
+    
             for row in data[1:]:
                 th = f"th{row[1]}"
                 emoji = self.emojis.get(th, "")
                 line = f"{emoji}<:blank_space:1229767163221381173>`{row[2]:^3}\t{row[3]:^3}\t{row[4]:>3}%\t {row[5]:>4}` \t {row[0]}\n"
-
-                if len(body) + len(line) >= MAX_LENGTH - len(heading):
+    
+                # Calculate length with intro/heading for first embed only
+                limit = MAX_LENGTH - len(heading) - (len(intro) if not embeds else 0)
+    
+                if len(body) + len(line) >= limit:
                     embed = discord.Embed(
-                        title="🏆 War Leaderboard 🏆" if not embeds else discord.Embed.Empty,
-                        description=heading + body if not embeds else body,
+                        title="🏆 War Leaderboard 🏆" if not embeds else None,
+                        description=intro + heading + body if not embeds else body,
                         color=0x000000
                     )
                     embed.set_footer(
@@ -60,14 +63,14 @@ class WarlordCog(commands.Cog):
                     )
                     embeds.append(embed)
                     body = ""
-
+    
                 body += line
-
-            # Add final embed for leftover lines
+    
+            # Add final embed
             if body:
                 embed = discord.Embed(
-                    title="🏆 War Leaderboard 🏆" if not embeds else discord.Embed.Empty,
-                    description=heading + body if not embeds else body,
+                    title="🏆 War Leaderboard 🏆" if not embeds else None,
+                    description=intro + heading + body if not embeds else body,
                     color=0x000000
                 )
                 embed.set_footer(
@@ -75,13 +78,15 @@ class WarlordCog(commands.Cog):
                     icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png"
                 )
                 embeds.append(embed)
-
+    
             for embed in embeds:
                 await channel.send(embed=embed)
-
+    
         except Exception as e:
             print("Error in !warstats:", e)
             await ctx.send("❌ An error occurred while retrieving war stats.")
+
+
 
 
 async def setup(bot: commands.Bot):
