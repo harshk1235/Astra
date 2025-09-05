@@ -41,7 +41,7 @@ cred_dict = json.loads(cred_str)
 creds = Credentials.from_service_account_info(cred_dict, scopes=scope)
 client = gspread.authorize(creds)
 
-SHEET_URL = os.environ.get("GOOGLE_SHEET_URL")
+SHEET_URL = os.environ.get("SHEET_URL")
 sheet = client.open_by_url(SHEET_URL).sheet1   # first sheet
 
 # Ensure header exists
