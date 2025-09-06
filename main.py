@@ -15,6 +15,7 @@ GUILD_ID = 688449973553201335   # your guild id
 STAFF_ROLE_ID = 1413549551075459254 # staff role id
 STAFF_CHANNEL_ID = 1413551509454455016 # staff-only channel id
 OWNER_ID = 440506087326744576  # your Discord ID for /reset_event
+ALLOWED_ROLE_ID = 732269445304811542
 
 CLUES = [ "https://media.discordapp.net/attachments/1261931986772033596/1413438360948707428/IMG_5081.png?ex=68bbee8d&is=68ba9d0d&hm=dd3124fde1b254bb370f22eaac080acacb68e22ab97c0605f9691f6af51891fe&=&format=webp&quality=lossless", 
 "https://media.discordapp.net/attachments/1261931986772033596/1413438361305092162/IMG_5075.png?ex=68bbee8d&is=68ba9d0d&hm=d8f5c6d30cb79035cf28051eca5472bf176fd8393efe0ca6ede7217e97fc41b7&=&format=webp&quality=lossless",
@@ -110,6 +111,9 @@ async def on_ready():
 @bot.tree.command(guild=discord.Object(id=GUILD_ID), name="register", description="Register for the scavenger hunt")
 async def register(interaction: discord.Interaction):
     global REGISTRATION_OPEN
+    if ALLOWED_ROLE_ID not in [role.id for role in interaction.user.roles]:
+        return await interaction.response.send_message(
+            "🚫 You don’t have permission to register for this event.") 
     if not REGISTRATION_OPEN:
         return await interaction.response.send_message("🚫 Registration is closed.")
 
@@ -273,6 +277,37 @@ async def leaderboard(interaction: discord.Interaction):
 
     embed = discord.Embed(title="📊 Scavenger Hunt Leaderboard", description=desc, color=0x2ecc71)
     await interaction.response.send_message(embed=embed)
+
+# ---- Progress ----
+@bot.tree.command(guild=discord.Object(id=GUILD_ID), name="progress", description="Check your scavenger hunt progress")
+async def progress(interaction: discord.Interaction, member: discord.Member = None):
+    """Show progress of yourself or another player (staff only for others)."""
+    target = member or interaction.user
+
+    # If checking someone else, require staff role
+    if member and STAFF_ROLE_ID not in [role.id for role in interaction.user.roles]:
+        return await interaction.response.send_message(
+            "🚫 You don’t have permission to check other players’ progress.")
+
+    # Lookup player in sheet
+    rows = sheet.get_all_records()
+    player_row = next((row for row in rows if str(row["DiscordID"]) == str(target.id)), None)
+
+    if not player_row:
+        return await interaction.response.send_message(
+            f"⚠️ {target.display_name} is not registered for the event.")
+
+    round_num = int(player_row["Round"])
+    progress_msg = (
+        f"**{target.display_name}**'s progress:\n"
+        f"📍 Current Round: {round_num if round_num <= len(CLUES) else 'Bonus Round 🎉'}\n"
+        f"✅ Completed: {round_num-1 if round_num > 0 else 0}/{len(CLUES)} clues\n"
+    )
+
+    if round_num > len(CLUES):
+        progress_msg += "✨ Bonus round unlocked!\n"
+
+    await interaction.response.send_message(progress_msg)
 
 # ---- SUBMIT ----
 class SubmissionView(discord.ui.View):
