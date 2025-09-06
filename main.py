@@ -340,7 +340,7 @@ class SubmissionView(discord.ui.View):
         else:
             # no remaining -> player finished all 10
             # mark round as 10 (if not already) and send bonus
-            sheet.update_cell(row, 3, str(len(CLUES)))
+            sheet.update_cell(row, 3, str(len(CLUES)+1))
             sheet.update_cell(row, 4, ",".join(map(str, list(range(len(CLUES))))))
             try:
                 await user.send("🎉 You have completed all 10 clues! Bonus clue unlocked:")
@@ -434,8 +434,11 @@ async def submit(interaction: discord.Interaction, attack_image: discord.Attachm
     values = sheet.row_values(row)
     round_num = int(values[2])
     used_clues = values[3].split(",") if len(values) > 2 and values[3] else []
-    current_clue_index = int(used_clues[-1])  # last assigned clue
-    clue_url = CLUES[current_clue_index]
+    if round_num <= 10:
+        current_clue_index = int(used_clues[-1])  # last assigned clue
+        clue_url = CLUES[current_clue_index]
+    else:
+        clue_url = BONUS_CLUE
 
     # Create view with both images
     view = SubmissionView(interaction.user.id, [attack_image.url, decoration_image.url])
@@ -460,9 +463,12 @@ async def submit(interaction: discord.Interaction, attack_image: discord.Attachm
             description=f"From: {interaction.user.mention}\n\n[Jump to submission]({public_msg.jump_url})",
             color=discord.Color.blurple()
         )
+        if round_num == 11:
+            staff_embed.add_field(name="🎉Bonus Clue Submission🎉", value="➡️", inline=False)
+        else:
+            staff_embed.add_field(name="Assigned Clue", value="➡️", inline=False)
         staff_embed.add_field(name="Attack Screenshot", value="⬇️", inline=False)
         staff_embed.set_image(url=attack_image.url)  # main image = attack
-        staff_embed.add_field(name="Assigned Clue", value="⬇️", inline=False)
         staff_embed.set_thumbnail(url=clue_url)  # show the clue as thumbnail
 
         # send attack embed first
