@@ -12,26 +12,22 @@ import asyncio
 # ================== CONFIG ===================
 TOKEN = os.environ.get("TOKEN")
 GUILD_ID = 688449973553201335   # your guild id
-STAFF_ROLE_ID = 1413549551075459254 # staff role id
-STAFF_CHANNEL_ID = 1413551509454455016 # staff-only channel id
+STAFF_ROLE_ID = 1439295653858644102 # staff role id
+STAFF_CHANNEL_ID = 1439296565113126972 # staff-only channel id
 OWNER_ID = 440506087326744576  # your Discord ID for /reset_event
-ALLOWED_ROLE_ID = 732269445304811542
+ALLOWED_ROLE_ID = 733028573329227859
 
-CLUES = [ "https://media.discordapp.net/attachments/1261931986772033596/1413438360948707428/IMG_5081.png?ex=68bbee8d&is=68ba9d0d&hm=dd3124fde1b254bb370f22eaac080acacb68e22ab97c0605f9691f6af51891fe&=&format=webp&quality=lossless", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438361305092162/IMG_5075.png?ex=68bbee8d&is=68ba9d0d&hm=d8f5c6d30cb79035cf28051eca5472bf176fd8393efe0ca6ede7217e97fc41b7&=&format=webp&quality=lossless",
-"https://media.discordapp.net/attachments/1261931986772033596/1413438361636700161/IMG_5080.png?ex=68bbee8d&is=68ba9d0d&hm=645c99bc4e4b81b8db2af0255782d575b6fbf0dc1848c02367b9b8e4bfed6fd1&=&format=webp&quality=lossless", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438360621678612/IMG_5082.png?ex=68bbee8d&is=68ba9d0d&hm=549ad684c59c26fb6316afe5f1739c71a56b5afbfe7825904692d6ef0da4b4a5&=&format=webp&quality=lossless", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438361959534632/IMG_5074.png?ex=68bbee8d&is=68ba9d0d&hm=512dc6f444b550bb19f53b50c4db433391f80014e46d21421189528c615d67e3&=&format=webp&quality=lossless", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438362324308028/IMG_5077.png?ex=68bbee8d&is=68ba9d0d&hm=912386ddba294aa7e3ecd362d96381bd33c52119da7db7ac5d6b4ae1bc877a6e&=&format=webp&quality=lossless&width=376&height=696", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438362714636369/IMG_5073.png?ex=68bbee8e&is=68ba9d0e&hm=7aa684efc05ed66775dfea3a03d28b7d4ccfb698e6d907fbfec720774120a5e1&=&format=webp&quality=lossless", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438363112968265/IMG_5083.png?ex=68bbee8e&is=68ba9d0e&hm=4b26350ca176c1e1cbeb1485d867aa67123a8ae038da94c552c8cb23a689abcb&=&format=webp&quality=lossless", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438363435798579/IMG_5072.png?ex=68bbee8e&is=68ba9d0e&hm=0d5b6e7564db54d2f288c1f4cd718b330d01b697f42374d2dab0d274d0aab85b&=&format=webp&quality=lossless&width=608&height=697", 
-"https://media.discordapp.net/attachments/1261931986772033596/1413438363779989545/IMG_5076.png?ex=68bbee8e&is=68ba9d0e&hm=8c2a0d1a7067c9f85e49c87057c19ae5e0a502e46ec4fe685f40fb750ca6f3d7&=&format=webp&quality=lossless" 
-# ... add up to 10 clues 
+CLUES = [ "https://media.discordapp.net/attachments/1261931986772033596/1413438363779989545/IMG_5076.png?ex=6919890e&is=6918378e&hm=4778964fb52508b1d1e001cbde6b137fb5ebba37071eddc7792d50bbf534a657&format=webp&quality=lossless&", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438361959534632/IMG_5074.png?ex=6919890d&is=6918378d&hm=30f18997ff3dfc388c2228fff3702b4699be8cef7799aa26af4b22109fc91623&format=webp&quality=lossless&",
+"https://media.discordapp.net/attachments/1261931986772033596/1413438362324308028/IMG_5077.png?ex=6919890d&is=6918378d&hm=93510ae4f6c42c54c5239c32713c0315ad294254782fc094b89b939ce03e55f6&=&format=webp&quality=lossless&width=543&height=1006", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438361636700161/IMG_5080.png?ex=6919890d&is=6918378d&hm=e6974c303878baebaad2e161cf2064cdf49a7ed1f2636a2fe7e7faeecf99177f&=&format=webp&quality=lossless", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438361305092162/IMG_5075.png?ex=6919890d&is=6918378d&hm=b8c54dcf03f378b8b30e6fdbe0995789228cc550276a8ca703d815fc78bb14db&=&format=webp&quality=lossless", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438360948707428/IMG_5081.png?ex=6919890d&is=6918378d&hm=0dea3612cab33f132df705076008afeb6e8c3bfffcd35183f12a2e12831b8612&=&format=webp&quality=lossless", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438362714636369/IMG_5073.png?ex=6919890e&is=6918378e&hm=f7c6e6c110c5a4b65991858ce2522ea6dcb3063f246b4ac436a75f6abe48d1e9&=&format=webp&quality=lossless", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438363112968265/IMG_5083.png?ex=6919890e&is=6918378e&hm=d5f34c93e1c701d76d5403bf919c22a08695340e659db270e14085cf6ee2f775&=&format=webp&quality=lossless", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438363435798579/IMG_5072.png?ex=6919890e&is=6918378e&hm=72b91875a9c55667a9761d5d63361876dc08b7295f59173b8d682a007828e52e&=&format=webp&quality=lossless", 
+"https://media.discordapp.net/attachments/1261931986772033596/1413438360621678612/IMG_5082.png?ex=6919890d&is=6918378d&hm=d5c26d30d075f70eb4562d636dc522554a09f025dfe547b3dd026269022e1804&=&format=webp&quality=lossless"  
 ] 
-
-BONUS_CLUE = "https://media.discordapp.net/attachments/1261931986772033596/1413538517354807366/IMG_20250905_202712.jpg?ex=68bc4bd4&is=68bafa54&hm=fd87422abdee742c12ca3b747acb251298584e42ef8c9c5cdaeb2c9fe1bdfaa7&=&format=webp"
-
 
 
 # Google Sheets setup
@@ -168,19 +164,27 @@ async def delete_registration(interaction: discord.Interaction, member: discord.
         await interaction.response.send_message("⚠️ Player not registered.")
 
 # ---- START EVENT ----
-@bot.tree.command(guild=discord.Object(id=GUILD_ID), name="start_event", description="Start the scavenger hunt (staff only)")
+@bot.tree.command(
+    guild=discord.Object(id=GUILD_ID),
+    name="start_event",
+    description="Start the scavenger hunt (staff only)"
+)
 async def start_event(interaction: discord.Interaction):
     global EVENT_ACTIVE, REGISTRATION_OPEN
+
     # staff check
     if STAFF_ROLE_ID not in [role.id for role in interaction.user.roles]:
-        return await interaction.response.send_message("🚫 Only staff can start the event.", ephemeral=True)
+        return await interaction.response.send_message(
+            "🚫 Only staff can start the event.", ephemeral=True
+        )
 
-    # defer the interaction so token doesn't expire while we DM everyone
+    # defer so the token doesn't expire during DM sending
     await interaction.response.defer(ephemeral=True)
 
     EVENT_ACTIVE = True
     REGISTRATION_OPEN = False
 
+    # save state in sheet
     set_config("EVENT_ACTIVE", "TRUE")
     set_config("REGISTRATION_OPEN", "FALSE")
 
@@ -188,34 +192,42 @@ async def start_event(interaction: discord.Interaction):
     undeliverable = []
     total = len(players)
 
+    # EVERYONE GETS CLUE #1 (CLUES[0])
+    first_clue = CLUES[0]
+
     for i, player in enumerate(players, start=2):
         try:
-            # choose a random first clue (non-persistent uniqueness not required across players)
-            clue_index = random.randint(0, len(CLUES) - 1)
-            sheet.update_cell(i, 3, "1")                 # Round = 1
-            sheet.update_cell(i, 4, str(clue_index))    # UsedClues = index
+            # set round to 1
+            sheet.update_cell(i, 3, "1")      # Round column
+            sheet.update_cell(i, 4, "")       # UsedClues not needed, clear it
 
             user = await bot.fetch_user(int(player["DiscordID"]))
+
             try:
-                await user.send(f"🔎 Your first clue (Round 1):\n{CLUES[clue_index]}")
+                await user.send(
+                    f"🔎 Your first clue (Round 1):\n{first_clue}"
+                )
             except Exception:
                 undeliverable.append(player["Name"])
+
         except Exception as e:
-            # Log sheet/DM error but continue
             logging.exception(f"Error starting for player row {i}: {e}")
 
-        # small sleep to avoid hammering rate limits if many users
-        await asyncio.sleep(0.08)
+        await asyncio.sleep(0.08)  # avoid ratelimits
 
-    # send final followup after work is done
-    msg = f"✅ Event started. Sent first clue to {total - len(undeliverable)} players."
+    msg = (
+        f"✅ Event started. Sent first clue to {total - len(undeliverable)} players."
+    )
+
     if undeliverable:
-        msg += f"\n⚠️ Could not DM: {', '.join(undeliverable)} — check staff channel."
+        msg += f"\n⚠️ Could not DM: {', '.join(undeliverable)}"
         chan = bot.get_channel(STAFF_CHANNEL_ID)
         if chan:
-            await chan.send(f"⚠️ Could not DM these players their first clue: {', '.join(undeliverable)}")
+            await chan.send(
+                f"⚠️ Could not DM these players their first clue: {', '.join(undeliverable)}"
+            )
 
-    await interaction.followup.send(msg, ephemeral=True)
+    await interaction.followup.send(msg)
 
 # ---- END EVENT ----
 @bot.tree.command(guild=discord.Object(id=GUILD_ID), name="end_event", description="End the scavenger hunt (staff only)")
@@ -353,13 +365,13 @@ class SubmissionView(discord.ui.View):
         used = [int(x) for x in used_raw.split(",") if x.strip().isdigit()] if used_raw else []
 
         # pick remaining clue
-        remaining = [i for i in range(len(CLUES)) if i not in used]
+       # pick remaining clue
+        round_num = len(used) + 1
         user = await bot.fetch_user(self.user_id)
 
-        if remaining:
-            chosen = random.choice(remaining)
+        if round_num <= len(CLUES):
+            chosen = round_num - 1  # Always pick clue in order: 0,1,2,3...
             used.append(chosen)
-            round_num = len(used)
             # update sheet
             sheet.update_cell(row, 3, str(round_num))
             sheet.update_cell(row, 4, ",".join(map(str, used)))
@@ -375,15 +387,17 @@ class SubmissionView(discord.ui.View):
         else:
             # no remaining -> player finished all 10
             # mark round as 10 (if not already) and send bonus
-            sheet.update_cell(row, 3, str(len(CLUES)+1))
-            sheet.update_cell(row, 4, ",".join(map(str, list(range(len(CLUES))))))
-            try:
-                await user.send("🎉 You have completed all 10 clues! Bonus clue unlocked:")
-                await user.send(BONUS_CLUE)
-            except Exception:
-                staff_chan = bot.get_channel(STAFF_CHANNEL_ID)
-                if staff_chan:
-                    await staff_chan.send(f"⚠️ Could not DM bonus to {user}.")
+            sheet.update_cell(row, 3, str(len(CLUES)))
+            await user.send("🎉 Congratulations! You have completed all 10 clues.")
+            # sheet.update_cell(row, 4, ",".join(map(str, list(range(len(CLUES))))))
+            # try:
+            #     await user.send("🎉 You have completed all 10 clues! Bonus clue unlocked:")
+            #     await user.send(BONUS_CLUE)
+            # except Exception:
+            #     staff_chan = bot.get_channel(STAFF_CHANNEL_ID)
+            #     if staff_chan:
+            #         await staff_chan.send(f"⚠️ Could not DM bonus to {user}.")
+             
 
         # Update / edit public message and staff message to show approval + who approved
         try:
