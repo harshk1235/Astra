@@ -199,7 +199,7 @@ async def start_event(interaction: discord.Interaction):
         try:
             # set round to 1
             sheet.update_cell(i, 3, "1")      # Round column
-            sheet.update_cell(i, 4, "")       # UsedClues not needed, clear it
+ # UsedClues not needed, clear it
 
             user = await bot.fetch_user(int(player["DiscordID"]))
 
@@ -360,21 +360,15 @@ class SubmissionView(discord.ui.View):
             await interaction.followup.send("⚠️ Player is not registered.")
             return
 
-        # Read used clues
-        used_raw = (sheet.cell(row, 4).value or "").strip()
-        used = [int(x) for x in used_raw.split(",") if x.strip().isdigit()] if used_raw else []
+# fixed clue order
+        round_num = int(sheet.cell(row, 3).value)
 
-        # pick remaining clue
-       # pick remaining clue
-        round_num = len(used) + 1
-        user = await bot.fetch_user(self.user_id)
+        if round_num < 10:
+            next_round = round_num + 1
+            sheet.update_cell(row, 3, str(next_round))
 
-        if round_num <= len(CLUES):
-            chosen = round_num - 1  # Always pick clue in order: 0,1,2,3...
-            used.append(chosen)
-            # update sheet
-            sheet.update_cell(row, 3, str(round_num))
-            sheet.update_cell(row, 4, ",".join(map(str, used)))
+            next_clue = CLUES[next_round - 1]
+
 
             # DM the clue (URL as message so Discord embeds it)
             try:
@@ -480,14 +474,10 @@ async def submit(interaction: discord.Interaction, attack_image: discord.Attachm
         return await interaction.response.send_message("⚠️ You are not registered.")
 
     row = get_row(interaction.user.id)
-    values = sheet.row_values(row)
-    round_num = int(values[2])
-    used_clues = values[3].split(",") if len(values) > 2 and values[3] else []
-    if round_num <= 10:
-        current_clue_index = int(used_clues[-1])  # last assigned clue
-        clue_url = CLUES[current_clue_index]
-    else:
-        clue_url = BONUS_CLUE
+    round_num = int(sheet.cell(row, 3).value)
+    current_clue_index = round_num - 1
+    clue_url = CLUES[current_clue_index]
+
 
     # Create view with both images
     view = SubmissionView(interaction.user.id, [attack_image.url, decoration_image.url])
