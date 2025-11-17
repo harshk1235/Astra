@@ -346,78 +346,99 @@ class SubmissionView(discord.ui.View):
         except Exception:
             pass
 
-    @discord.ui.button(label="Approve ✅", style=discord.ButtonStyle.success)
-    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # staff-only guard (extra)
-        await interaction.response.defer(ephemeral=True)
+	@discord.ui.button(label="Approve ✅", style=discord.ButtonStyle.success)
+	async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+	    # acknowledge immediately so we have time to do work
+	    await interaction.response.defer(ephemeral=True)
+	
+	    # staff-only guard
+	    if STAFF_ROLE_ID not in [r.id for r in interaction.user.roles]:
+	        return await interaction.followup.send("⛔ Only staff can approve.", ephemeral=True)
+	
+	    # get row index for player
+	    row = get_row(self.user_id)
+	    if not row:
+	        return await interaction.followup.send("⚠️ Player is not registered.", ephemeral=True)
+	
+	    # fetch current round safely (column 3)
+	    try:
+	        current_round_val = sheet.cell(row, 3).value
+	        current_round = int(current_round_val) if current_round_val and str(current_round_val).isdigit() else 0
+	    except Exception as e:
+	        await interaction.followup.send("⚠️ Failed to read player round from sheet.", ephemeral=True)
+	        return
+	
+	    # fetch discord user object
+	    try:
+	        user = await bot.fetch_user(self.user_id)
+	    except Exception:
+	        await interaction.followup.send("⚠️ Could not fetch the Discord user.", ephemeral=True)
+	        return
+	
+	    # determine next step (fixed-order clues)
+	    try:
+	        if current_round < 10:
+	            next_round = current_round + 1
+	            next_clue = CLUES[next_round - 1]  # round 1 -> CLUES[0], etc.
+	
+	            # update sheet round
+	            sheet.update_cell(row, 3, str(next_round))
+	
+	            # DM the clue
+	            try:
+	                await user.send(f"🎉 Your submission was approved. Here is your clue (Round {next_round}):\n{next_clue}")
+	                dm_ok = True
+	            except Exception:
+	                dm_ok = False
+	
+	            # notify staff in case DM failed
+	            if not dm_ok:
+	                staff_chan = bot.get_channel(STAFF_CHANNEL_ID)
+	                if staff_chan:
+	                    await staff_chan.send(f"⚠️ Could not DM clue to {user} (Round {next_round}).")
+	
+	        else:
+	            # player completed all 10 clues
+	            # ensure sheet lists them as 10
+	            sheet.update_cell(row, 3, str(len(CLUES)))
+	            try:
+	                await user.send("🎉 Congratulations! You have completed all 10 clues.")
+	            except Exception:
+	                staff_chan = bot.get_channel(STAFF_CHANNEL_ID)
+	                if staff_chan:
+	                    await staff_chan.send(f"⚠️ Could not DM completion notice to {user}.")
+	
+	    except Exception as e:
+	        # something went wrong while deciding/sending clue
+	        await interaction.followup.send(f"⚠️ Error during approval: {e}", ephemeral=True)
+	        return
+	
+	    # Update public embed (the message where the button was clicked)
+	    try:
+	        public_msg = interaction.message
+	        public_embed = public_msg.embeds[0] if public_msg.embeds else discord.Embed(title="Submission", description="")
+	        public_embed.color = discord.Color.green()
+	        public_embed.set_footer(text=f"✅ Approved by {interaction.user.display_name}")
+	        await public_msg.edit(embed=public_embed, view=None)
+	    except Exception:
+	        # ignore embed edit failures
+	        pass
+	
+	    # Update staff message if we have stored references
+	    try:
+	        if self.staff_channel_id and self.staff_message_id:
+	            staff_chan = bot.get_channel(self.staff_channel_id)
+	            if staff_chan:
+	                staff_msg = await staff_chan.fetch_message(self.staff_message_id)
+	                staff_embed = staff_msg.embeds[0] if staff_msg.embeds else discord.Embed(title="Submission", description="")
+	                staff_embed.color = discord.Color.green()
+	                staff_embed.set_footer(text=f"✅ Approved by {interaction.user.display_name}")
+	                await staff_msg.edit(embed=staff_embed)
+	    except Exception:
+	        pass
+	
+	    await interaction.followup.send("✅ Submission approved and next clue delivered.", ephemeral=True)
 
-        if STAFF_ROLE_ID not in [r.id for r in interaction.user.roles]:
-            return await interaction.followup.send("⛔ Only staff can approve.", ephemeral=True)
-
-        # get row for player
-        row = get_row(self.user_id)
-        if not row:
-            await interaction.followup.send("⚠️ Player is not registered.")
-            return
-
-# fixed clue order
-        round_num = int(sheet.cell(row, 3).value)
-
-        if round_num < 10:
-            next_round = round_num + 1
-            sheet.update_cell(row, 3, str(next_round))
-
-            next_clue = CLUES[next_round - 1]
-
-
-            # DM the clue (URL as message so Discord embeds it)
-            try:
-                await user.send(f"🎉 Your submission was approved. Here is your clue (Round {round_num}):\n{CLUES[chosen]}")
-            except Exception:
-                # if DM fails, notify staff channel
-                staff_chan = bot.get_channel(STAFF_CHANNEL_ID)
-                if staff_chan:
-                    await staff_chan.send(f"⚠️ Could not DM clue to {user} (Round {round_num}).")
-        else:
-            # no remaining -> player finished all 10
-            # mark round as 10 (if not already) and send bonus
-            sheet.update_cell(row, 3, str(len(CLUES)))
-            await user.send("🎉 Congratulations! You have completed all 10 clues.")
-            # sheet.update_cell(row, 4, ",".join(map(str, list(range(len(CLUES))))))
-            # try:
-            #     await user.send("🎉 You have completed all 10 clues! Bonus clue unlocked:")
-            #     await user.send(BONUS_CLUE)
-            # except Exception:
-            #     staff_chan = bot.get_channel(STAFF_CHANNEL_ID)
-            #     if staff_chan:
-            #         await staff_chan.send(f"⚠️ Could not DM bonus to {user}.")
-             
-
-        # Update / edit public message and staff message to show approval + who approved
-        try:
-            # public is the message where the button was clicked
-            public_msg = interaction.message
-            public_embed = public_msg.embeds[0] if public_msg.embeds else discord.Embed(title="Submission", description="")
-            public_embed.color = discord.Color.green()
-            public_embed.set_footer(text=f"✅ Approved by {interaction.user.display_name}")
-            await public_msg.edit(embed=public_embed, view=None)
-        except Exception:
-            pass
-
-        # edit staff message (if set)
-        try:
-            if self.staff_channel_id and self.staff_message_id:
-                staff_chan = bot.get_channel(self.staff_channel_id)
-                if staff_chan:
-                    staff_msg = await staff_chan.fetch_message(self.staff_message_id)
-                    staff_embed = staff_msg.embeds[0] if staff_msg.embeds else discord.Embed(title="Submission", description="")
-                    staff_embed.color = discord.Color.green()
-                    staff_embed.set_footer(text=f"✅ Approved by {interaction.user.display_name}")
-                    await staff_msg.edit(embed=staff_embed)
-        except Exception:
-            pass
-
-        await interaction.followup.send("✅ Submission approved and next clue delivered.")
 
     @discord.ui.button(label="Reject ❌", style=discord.ButtonStyle.danger)
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
