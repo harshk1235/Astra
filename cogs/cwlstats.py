@@ -35,7 +35,7 @@ class CWLStats(commands.Cog):
     def load_data(self):
         try:
             # Load player tags
-            tags_ws = self.gc.open_by_url(os.environ["GOOGLE_SHEET_URL"]).worksheet("Player Tags")
+            tags_ws = self.gc.open_by_url(os.environ["SHEET_URL"]).worksheet("Player Tags")
             tag_data = tags_ws.get_all_values()[1:]  # Skip header
 
             self.owner_accounts = defaultdict(list)
@@ -48,7 +48,7 @@ class CWLStats(commands.Cog):
                     tag_map[name] = tag
 
             # Load CWL data
-            cwl_ws = self.gc.open_by_url(os.environ["GOOGLE_SHEET_URL"]).worksheet(self.sheet_name)            
+            cwl_ws = self.gc.open_by_url(os.environ["SHEET_URL"]).worksheet(self.sheet_name)            
             cwl_rows = cwl_ws.get_all_values()
             headers = cwl_rows[0]
             data = cwl_rows[1:]
