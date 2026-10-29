@@ -30,7 +30,12 @@ class CWLStats(commands.Cog):
 
     def get_current_cwl_sheet_name(self):
         now = datetime.now()
-        return f"Cwl {now.strftime('%B')}{now.year}"
+        month = now.strftime("%B")
+
+        if month not in ("June", "July"):
+            month = month[:3]
+
+        return f"Cwl {month}{now.year}"
 
     def load_data(self):
         try:
