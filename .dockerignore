@@ -1,0 +1,13 @@
+# Keep secrets and local junk out of the image. Config is passed in as
+# environment variables at run time, never baked into the image.
+.git
+.venv
+venv
+.env
+*.env
+credentials*.json
+service-account*.json
+__pycache__
+*.py[cod]
+.pytest_cache
+tests

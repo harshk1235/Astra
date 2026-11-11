@@ -1,0 +1,44 @@
+# Local development: the bot plus a Postgres database.
+#   docker compose up --build        start both (Ctrl+C to stop)
+#   docker compose up -d db          start only the database
+#   docker compose logs -f bot       follow the bot's logs
+#   docker compose down              stop (data is kept in the pgdata volume)
+#   docker compose down -v           stop AND delete the database
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: astra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-astra_dev}
+      POSTGRES_DB: astra
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost only, so you can connect with psql/DBeaver from
+      # your machine but nothing else on the network can reach it.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astra -d astra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      # Inside the compose network the database host is the service name "db".
+      DATABASE_URL: postgresql://astra:${POSTGRES_PASSWORD:-astra_dev}@db:5432/astra
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
