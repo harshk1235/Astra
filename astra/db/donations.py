@@ -42,9 +42,13 @@ class DonationsRepository:
             [(r.account_tag, season, r.donated, r.received) for r in rows],
         )
 
-    async def leaderboard(self, season: str) -> list[LeaderboardEntry]:
+    async def leaderboard(self, season: str, *, include_inactive: bool = False) -> list[LeaderboardEntry]:
         """Per person, summed over all their accounts, most donated first.
-        Same grouping as the old Donations sheet (by 'singular name')."""
+        Same grouping as the old Donations sheet (by 'singular name').
+
+        By default only people who are in a tracked clan, or who donated
+        something this season, are listed; linked players from other clans
+        would otherwise fill the bottom with zeros."""
         rows = await self._pool.fetch(
             """SELECT m.display_name AS name,
                       SUM(d.donated)::int  AS donated,
@@ -54,7 +58,12 @@ class DonationsRepository:
                JOIN members  m ON m.id  = a.member_id
                WHERE d.season = $1
                GROUP BY m.id, m.display_name
+               HAVING $2
+                   OR SUM(d.donated) > 0
+                   OR EXISTS (SELECT 1 FROM clan_memberships cm
+                              JOIN clans c ON c.tag = cm.clan_tag AND c.active
+                              WHERE cm.member_id = m.id)
                ORDER BY donated DESC, received ASC, name""",
-            season,
+            season, include_inactive,
         )
         return [LeaderboardEntry(r["name"], r["donated"], r["received"]) for r in rows]

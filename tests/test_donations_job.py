@@ -140,8 +140,11 @@ def test_job_counts_only_donations_in_tracked_clans():
         assert (result.status, result.items_ok, result.items_failed) == ("ok", 3, 0)
         assert "/v2/player/%232Y0VPJUVJ/history/stats" in client.paths
         board = await donations.leaderboard("2026-11")
-        # Harsh: 1000 (PR) + 500 (DOP); the 4000 outside is ignored. Bob: nothing in PR/DOP.
-        assert [(e.name, e.donated, e.received) for e in board] == [("Harsh", 1500, 300), ("Bob", 0, 0)]
+        # Harsh: 1000 (PR) + 500 (DOP); the 4000 outside is ignored.
+        # Bob donated nothing in PR/DOP and isn't a member, so he's hidden by default.
+        assert [(e.name, e.donated, e.received) for e in board] == [("Harsh", 1500, 300)]
+        everyone = await donations.leaderboard("2026-11", include_inactive=True)
+        assert [(e.name, e.donated) for e in everyone] == [("Harsh", 1500), ("Bob", 0)]
         run = await pool.fetchrow("SELECT * FROM job_runs")
         assert (run["job"], run["status"], run["items_ok"], run["finished_at"] is not None) == \
                ("donations", "ok", 3, True)
@@ -164,7 +167,7 @@ def test_api_down_marks_run_failed_and_keeps_old_data():
         await run_donations_job(FakeClashKing(), roster, donations, jobs, now=NOW)
         result = await run_donations_job(FakeClashKing(fail=set(EVENTS)), roster, donations, jobs, now=NOW)
         assert result.status == "failed"
-        assert len(await donations.leaderboard("2026-11")) == 2   # still serving last good numbers
+        assert len(await donations.leaderboard("2026-11")) == 1   # still serving last good numbers
         assert await jobs.last_success("donations") is not None
     with_db(t)
 
