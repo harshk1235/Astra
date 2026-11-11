@@ -6,9 +6,9 @@ import logging
 from astra.db.donations import DonationsRepository
 from astra.db.jobs import JobRunsRepository
 from astra.exports import donation_rows
-from astra.jobs.donations import season_key
+from astra.month_option import MonthError, month_autocomplete, resolve_month
+from astra.months import month_key, month_label
 from astra.timing import timed
-from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
@@ -23,22 +23,31 @@ class Donations(commands.Cog):
     
     @commands.command(name="donos")
     @commands.has_permissions(administrator=True)
-    async def donos_prefix(self, ctx):
-        await self.send_donos_embed(ctx)
+    async def donos_prefix(self, ctx, month: str = None):
+        await self.send_donos_embed(ctx, month)
 
     @app_commands.command(name="donos", description="Displays donation leaderboard")
-    async def donos_slash(self, interaction: discord.Interaction):
-        await self.send_donos_embed(interaction)
+    @app_commands.describe(month="Which month (default: this month)")
+    @app_commands.autocomplete(month=month_autocomplete)
+    async def donos_slash(self, interaction: discord.Interaction, month: str = None):
+        await self.send_donos_embed(interaction, month)
 
-    async def send_donos_embed(self, source):
+    async def send_donos_embed(self, source, month=None):
         is_slash = isinstance(source, discord.Interaction)
         if is_slash:
             # Discord fails a slash command that gets no response within 3 seconds.
             # The sheet read can take longer, so acknowledge first and reply after.
             await source.response.defer()
+        send = source.followup.send if is_slash else source.send
+        try:
+            start = resolve_month(self.bot.settings, month)
+        except MonthError as e:
+            return await send(str(e))
         try:
             with timed("donos.load"):
-                data, updated_at = await self.load_rows()
+                data, updated_at = await self.load_rows(start)
+            if not data:
+                return await send(f"No donation data for {month_label(start)}.")
             heading = "`Donated\tReceived`\n\n"
             text = ""
 
@@ -49,7 +58,7 @@ class Donations(commands.Cog):
                 text += f"`{donated:^7}\t{received:^8}`   {name}\n"
 
             embed = discord.Embed(
-                title="📤 Donation Leaderboard 📥",
+                title=f"📤 Donation Leaderboard · {month_label(start)} 📥",
                 description="\n\n💰 Here's a look at who’s fueling the clan with generosity this season! Check out the top donors and receivers below. \n\n" + heading + text,
                 color=discord.Color.from_rgb(0, 0, 0)
             )
@@ -73,12 +82,13 @@ class Donations(commands.Cog):
             else:
                 await source.send("Failed to fetch donation stats.")
 
-    async def load_rows(self):
+    async def load_rows(self, start):
         """(rows without header, last-updated time). Reads Postgres when the
-        bot has a database, otherwise the Donations sheet as before."""
+        bot has a database, otherwise the Donations sheet as before (the sheet
+        only has the current month)."""
         if self.bot.db is None:
             return (await self.bot.sheets.get_values("Donations"))[1:], None
-        entries = await DonationsRepository(self.bot.db).leaderboard(season_key(datetime.now(timezone.utc)))
+        entries = await DonationsRepository(self.bot.db).leaderboard(month_key(start))
         rows = [[str(c) for c in r] for r in donation_rows(entries)[1:]]
         return rows, await JobRunsRepository(self.bot.db).last_success("donations")
 
