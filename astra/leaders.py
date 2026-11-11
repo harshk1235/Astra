@@ -37,9 +37,15 @@ class Target:
 
 @dataclass
 class Result:
-    message: str
+    message: str                                    # one-line summary (also used for the log channel)
     sync_discord_ids: list[int] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # What happened, so the command can render a nicer message:
+    kind: str = ""                                  # joined | linked | unlinked | removed | promoted | demoted
+    target_id: int | None = None
+    clan: Clan | None = None
+    rank: Rank | None = None                        # new rank (joined/linked/promoted/demoted)
+    account: tuple[str, str] | None = None          # (tag, account name)
 
 
 def person_name(display_name: str) -> str:
@@ -85,7 +91,8 @@ async def joined(repo: MembershipRepository, actor: Actor, target: Target, tag: 
                          clan_tag=clan.tag, account_tag=tag, to_rank=Rank.MEMBER)
     note = _ingame_note(tag, clan, ingame, await repo.list_clans())
     return Result(f"✅ <@{target.discord_id}> joined **{clan.alias}** as Member with `{tag}`.",
-                  [target.discord_id], [note] if note else [])
+                  [target.discord_id], [note] if note else [], kind="joined", target_id=target.discord_id,
+                  clan=clan, rank=Rank.MEMBER, account=(tag, await _account_name(repo, tag)))
 
 
 async def link(repo: MembershipRepository, actor: Actor, target: Target, tag: str,
@@ -106,7 +113,8 @@ async def link(repo: MembershipRepository, actor: Actor, target: Target, tag: st
                 raise PermissionDenied("Only co-leaders and leaders can link accounts.")
         member_id = await _link(repo, actor, target, tag, ingame)
         return Result(f"🔗 Linked `{tag}` to <@{target.discord_id}> (not in a tracked clan, so no clan roles).",
-                      [target.discord_id])
+                      [target.discord_id], kind="linked", target_id=target.discord_id,
+                      account=(tag, await _account_name(repo, tag)))
 
     rank = rank or Rank.MEMBER
     actor_rank = await _actor_rank(repo, actor, clan.tag)
@@ -124,7 +132,8 @@ async def link(repo: MembershipRepository, actor: Actor, target: Target, tag: st
     else:
         msg = (f"🔗 Linked `{tag}` ({m.name}) to <@{target.discord_id}>. They're already "
                f"{RANK_NAMES[existing]} in **{clan.alias}**.")
-    return Result(msg, [target.discord_id])
+    return Result(msg, [target.discord_id], kind="linked", target_id=target.discord_id, clan=clan,
+                  rank=existing or rank, account=(tag, m.name))
 
 
 async def _link(repo: MembershipRepository, actor: Actor, target: Target, tag: str,
@@ -158,7 +167,8 @@ async def unlink(repo: MembershipRepository, actor: Actor, tag: str) -> Result:
                          account_tag=tag)
     owner = f"<@{account.owner_discord_id}>" if account.owner_discord_id else account.owner_name
     return Result(f"✂️ Unlinked `{tag}` ({account.name}) from {owner}. Their clan memberships are unchanged.",
-                  [account.owner_discord_id] if account.owner_discord_id else [])
+                  [account.owner_discord_id] if account.owner_discord_id else [], kind="unlinked",
+                  target_id=account.owner_discord_id, account=(tag, account.name))
 
 
 async def remove(repo: MembershipRepository, actor: Actor, target: Target, clan_alias: str) -> Result:
@@ -173,7 +183,8 @@ async def remove(repo: MembershipRepository, actor: Actor, target: Target, clan_
     await repo.delete_membership(member_id, clan.tag)
     await repo.log_event(action="left", actor_discord_id=actor.discord_id, member_id=member_id,
                          clan_tag=clan.tag, from_rank=target_rank)
-    return Result(f"👋 Removed <@{target.discord_id}> from **{clan.alias}**.", [target.discord_id])
+    return Result(f"👋 Removed <@{target.discord_id}> from **{clan.alias}**.", [target.discord_id],
+                  kind="removed", target_id=target.discord_id, clan=clan, rank=target_rank)
 
 
 async def change_rank(repo: MembershipRepository, actor: Actor, target: Target, clan_alias: str | None,
@@ -203,7 +214,13 @@ async def change_rank(repo: MembershipRepository, actor: Actor, target: Target, 
                          member_id=member_id, clan_tag=clan.tag, from_rank=current, to_rank=new)
     verb = "Promoted" if step > 0 else "Demoted"
     return Result(f"{'⬆️' if step > 0 else '⬇️'} {verb} <@{target.discord_id}> to **{RANK_NAMES[new]}** "
-                  f"in **{clan.alias}**.", [target.discord_id])
+                  f"in **{clan.alias}**.", [target.discord_id], kind="promoted" if step > 0 else "demoted",
+                  target_id=target.discord_id, clan=clan, rank=new)
+
+
+async def _account_name(repo: MembershipRepository, tag: str) -> str:
+    account = await repo.get_account(tag)
+    return account.name if account else tag
 
 
 def _tag(raw: str) -> str:

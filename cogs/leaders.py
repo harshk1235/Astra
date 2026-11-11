@@ -1,10 +1,11 @@
 """Leader commands: /joined /link /unlink /remove /promote /demote,
-/refreshroles, /clanmembers, /clanlinked.
+/refreshroles, /clanmembers, /clanlinked. Also restores roles when a
+registered member rejoins the server.
 
 The rules (who may do what) live in astra.leaders and astra.roles.rules and
 are checked against ranks in the database, not Discord permissions, so a
 co-leader of PR can manage PR whatever their Discord roles. Server admins
-and the owner can do everything.
+and the owner can do everything. How messages look is in astra.messages.
 """
 import logging
 
@@ -17,6 +18,7 @@ from astra.clan_option import clan_autocomplete
 from astra.db.membership import MembershipRepository
 from astra.jobs.roster import fetch_clan_members, fetch_ingame
 from astra.leaders import Actor, LeaderError, Result, Target
+from astra.messages import clan_linked_embeds, clan_members_embeds, render_result
 from astra.roles.rules import MANAGER_MIN_RANK, PermissionDenied, Rank
 from astra.roles.sync import RoleSyncError, sync_member
 
@@ -39,18 +41,6 @@ def _target(member: discord.Member) -> Target:
     return Target(member.id, member.display_name)
 
 
-def _chunk_embeds(title: str, lines: list[str], header: str = "") -> list[discord.Embed]:
-    """Split long lists into embeds under Discord's 4096-character limit."""
-    embeds, body = [], header
-    for line in lines:
-        if len(body) + len(line) + 1 > 4000:
-            embeds.append(discord.Embed(title=title if not embeds else None, description=body, color=0x000000))
-            body = ""
-        body += line + "\n"
-    embeds.append(discord.Embed(title=title if not embeds else None, description=body or "—", color=0x000000))
-    return embeds[:10]
-
-
 @app_commands.guild_only()
 class Leaders(commands.Cog):
     def __init__(self, bot):
@@ -69,20 +59,27 @@ class Leaders(commands.Cog):
             log.warning("ClashKing member lists unavailable", exc_info=True)
             return {}, ["Couldn't reach ClashKing to check the tag against the clans' member lists."]
 
-    async def _sync(self, guild: discord.Guild, discord_ids: list[int], reason: str) -> list[str]:
+    async def sync_people(self, guild: discord.Guild, discord_ids: list[int], reason: str):
+        """Sync roles for these people. Returns (roles added, roles removed, notes)."""
         repo = self.repo()
-        role_map, managed = await repo.role_map(), await repo.all_managed_role_ids()
-        notes = []
+        role_map, managed, common = await repo.role_map(), await repo.all_managed_role_ids(), await repo.common_role_id()
+        added, removed, notes = [], [], []
         for discord_id in discord_ids:
             member_id = await repo.member_id_for(discord_id)
             memberships = await repo.memberships_of(member_id) if member_id else []
             try:
-                outcome = await sync_member(guild, discord_id, memberships, role_map, managed, reason=reason)
-                if not outcome.found:
-                    notes.append(f"<@{discord_id}> isn't in this server, so no roles were changed.")
+                outcome = await sync_member(guild, discord_id, memberships, role_map, managed,
+                                            common_role_id=common, reason=reason)
             except RoleSyncError as e:
-                notes.append(f"⚠️ {e}")
-        return notes
+                notes.append(str(e))
+                continue
+            if not outcome.found:
+                notes.append(f"<@{discord_id}> isn't in this server, so no roles were changed.")
+            added += outcome.added_roles
+            removed += outcome.removed_roles
+        if not role_map:
+            notes.append("No clan roles are set up yet, so none were given. Use `/clan roles`.")
+        return added, removed, notes
 
     async def _run(self, interaction: discord.Interaction, action, *args, reason: str) -> None:
         """Shared flow: check the database exists, run the action, sync roles,
@@ -98,10 +95,19 @@ class Leaders(commands.Cog):
         except Exception:
             log.exception("%s failed", reason)
             return await interaction.followup.send("❌ Something went wrong; it's in the bot's logs.")
-        notes = result.warnings + await self._sync(interaction.guild, result.sync_discord_ids,
-                                                   f"{reason} by {interaction.user}")
-        text = result.message + "".join(f"\n> {n}" for n in notes)
-        await interaction.followup.send(text, allowed_mentions=NO_PINGS)
+
+        added, removed, notes = await self.sync_people(interaction.guild, result.sync_discord_ids,
+                                                       f"{reason} by {interaction.user}")
+        content, embed = render_result(result, added, removed, result.warnings + notes,
+                                       actor=interaction.user.display_name)
+        if embed is not None and result.target_id:
+            target = interaction.guild.get_member(result.target_id)
+            if target is not None:
+                embed.set_thumbnail(url=target.display_avatar.url)
+        # Ping the new member in the welcome message; nobody else.
+        pings = (discord.AllowedMentions(users=[discord.Object(result.target_id)], roles=False, everyone=False)
+                 if result.kind == "joined" and result.target_id else NO_PINGS)
+        await interaction.followup.send(content=content, embed=embed, allowed_mentions=pings)
         await self._log(f"{result.message} · by {interaction.user.mention}")
 
     async def _log(self, text: str) -> None:
@@ -112,6 +118,25 @@ class Leaders(commands.Cog):
                 await channel.send(text, allowed_mentions=NO_PINGS)
             except discord.HTTPException:
                 log.warning("couldn't post to the log channel", exc_info=True)
+
+    # --- a registered member rejoins the server ----------------------------------------
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        if self.bot.db is None or member.bot or member.guild.id != self.bot.settings.guild_id:
+            return
+        try:
+            if await self.repo().member_id_for(member.id) is None:
+                return
+            added, _, notes = await self.sync_people(member.guild, [member.id], "rejoined the server")
+            if added:
+                log.info("restored %d role(s) for %s on rejoin", len(added), member)
+                await self._log(f"🔁 Restored {', '.join(f'**{r}**' for r in added)} for {member.mention} "
+                                "(rejoined the server)")
+            for note in notes:
+                log.warning("rejoin sync for %s: %s", member, note)
+        except Exception:
+            log.exception("rejoin role restore failed for %s", member)
 
     # --- membership changes ---------------------------------------------------------
 
@@ -182,15 +207,15 @@ class Leaders(commands.Cog):
         if not await self._require_manager(interaction):
             return
         repo = self.repo()
-        people, role_map, managed = (await repo.all_people_memberships(), await repo.role_map(),
-                                     await repo.all_managed_role_ids())
+        people, role_map = await repo.all_people_memberships(), await repo.role_map()
+        managed, common = await repo.all_managed_role_ids(), await repo.common_role_id()
         if not role_map:
             return await interaction.followup.send("No clan roles are set yet. Use `/clan roles` first.")
         added = removed = missing = 0
         for discord_id, memberships in people.items():
             try:
                 outcome = await sync_member(interaction.guild, discord_id, memberships, role_map, managed,
-                                            reason=f"refreshroles by {interaction.user}")
+                                            common_role_id=common, reason=f"refreshroles by {interaction.user}")
             except RoleSyncError as e:
                 return await interaction.followup.send(f"⚠️ Stopped: {e}")
             if not outcome.found:
@@ -201,68 +226,46 @@ class Leaders(commands.Cog):
         await interaction.followup.send(msg)
         await self._log(f"{msg} · by {interaction.user.mention}")
 
+    async def _clan_for_list(self, interaction: discord.Interaction, clan: str):
+        if self.bot.db is None:
+            await interaction.response.send_message("This needs the database.", ephemeral=True)
+            return None
+        await interaction.response.defer()
+        if not await self._require_manager(interaction):
+            return None
+        found = await self.repo().find_clan(clan)
+        if found is None:
+            await interaction.followup.send(f"Unknown clan `{clan}`.")
+        return found
+
     @app_commands.command(name="clanmembers", description="Everyone in a clan in-game, and whether they're linked")
     @app_commands.autocomplete(clan=clan_autocomplete)
     async def clanmembers(self, interaction: discord.Interaction, clan: str):
-        if self.bot.db is None:
-            return await interaction.response.send_message("This needs the database.", ephemeral=True)
-        await interaction.response.defer()
-        if not await self._require_manager(interaction):
-            return
-        repo = self.repo()
-        found = await repo.find_clan(clan)
+        found = await self._clan_for_list(interaction, clan)
         if found is None:
-            return await interaction.followup.send(f"Unknown clan `{clan}`.")
+            return
         try:
             ingame = await fetch_clan_members(self.bot.clashking, found.tag)
         except Exception:
             log.exception("clan member list failed")
             return await interaction.followup.send("❌ Couldn't get the member list from ClashKing. Try again later.")
-        accounts = await repo.accounts_by_tag([m.tag for m in ingame])
-        ingame.sort(key=lambda m: (-(m.th or 0), m.name.lower()))
-        linked = [m for m in ingame if accounts.get(m.tag) and accounts[m.tag].owner_discord_id]
-        unlinked = [m for m in ingame if m not in linked]
-        lines = [f"**Not linked ({len(unlinked)})** · use `/link`"]
-        lines += [f"❌ TH{m.th} **{m.name}** `{m.tag}`" for m in unlinked] or ["Everyone is linked 🎉"]
-        lines += ["", f"**Linked ({len(linked)})**"]
-        lines += [f"✅ TH{m.th} {m.name} → <@{accounts[m.tag].owner_discord_id}>" for m in linked]
-        header = f"{len(ingame)} accounts in **{found.name}** right now.\n\n"
-        await interaction.followup.send(embeds=_chunk_embeds(f"{found.alias} members (in-game)", lines, header),
+        accounts = await self.repo().accounts_by_tag([m.tag for m in ingame])
+        await interaction.followup.send(embeds=clan_members_embeds(found, ingame, accounts),
                                         allowed_mentions=NO_PINGS)
 
     @app_commands.command(name="clanlinked", description="Everyone registered in a clan, flagging who has left in-game")
     @app_commands.autocomplete(clan=clan_autocomplete)
     async def clanlinked(self, interaction: discord.Interaction, clan: str):
-        if self.bot.db is None:
-            return await interaction.response.send_message("This needs the database.", ephemeral=True)
-        await interaction.response.defer()
-        if not await self._require_manager(interaction):
-            return
-        repo = self.repo()
-        found = await repo.find_clan(clan)
+        found = await self._clan_for_list(interaction, clan)
         if found is None:
-            return await interaction.followup.send(f"Unknown clan `{clan}`.")
+            return
         try:
             in_clan = {m.tag for m in await fetch_clan_members(self.bot.clashking, found.tag)}
         except Exception:
             log.exception("clan member list failed")
             return await interaction.followup.send("❌ Couldn't get the member list from ClashKing. Try again later.")
-        people = await repo.clan_people(found.tag)
-        gone = [p for p in people if not any(a.tag in in_clan for a in p.accounts)]
-        lines = []
-        if gone:
-            lines.append(f"**⚠️ No account in {found.alias} in-game ({len(gone)})** · `/remove` if they left")
-            lines += [f"• <@{p.discord_user_id}> ({p.display_name})" if p.discord_user_id else f"• {p.display_name}"
-                      for p in gone]
-            lines.append("")
-        lines.append(f"**Registered ({len(people)})**")
-        for p in people:
-            who = f"<@{p.discord_user_id}>" if p.discord_user_id else p.display_name
-            accs = ", ".join(f"{a.name}{' ✅' if a.tag in in_clan else ''}" for a in p.accounts) or "no accounts"
-            lines.append(f"{leaders.RANK_NAMES[p.rank]} · {who}: {accs}")
-        header = "✅ = that account is in the clan in-game right now.\n\n"
-        await interaction.followup.send(embeds=_chunk_embeds(f"{found.alias} registered members", lines, header),
-                                        allowed_mentions=NO_PINGS)
+        people = await self.repo().clan_people(found.tag)
+        await interaction.followup.send(embeds=clan_linked_embeds(found, people, in_clan), allowed_mentions=NO_PINGS)
 
 
 async def setup(bot):
