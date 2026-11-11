@@ -1,10 +1,13 @@
 """Scheduled data jobs. Runs only when the bot has a database (DATABASE_URL).
 
-Every hour: fetch from ClashKing into Postgres, then export the leaderboards
-to the Google Sheet (unless SHEETS_EXPORT=false). Each step is recorded in
-job_runs, so a failing export shows up even though the fetch succeeded.
+Every hour: fetch donations, regular wars and CWL from ClashKing into
+Postgres, then export the leaderboards to the Google Sheet (unless
+SHEETS_EXPORT=false). Every day: delete data older than the retention
+window. Each step is recorded in job_runs, so a failing export shows up even
+though the fetch succeeded.
 """
 import logging
+from datetime import datetime, timezone
 
 from discord.ext import commands, tasks
 
@@ -13,7 +16,9 @@ from astra.db.donations import DonationsRepository
 from astra.db.jobs import JobRunsRepository
 from astra.db.roster import RosterRepository
 from astra.db.wars import WarsRepository
-from astra.exports import export_donations, export_war_stats
+from astra.db.retention import delete_before
+from astra.exports import export_cwl, export_donations, export_war_stats
+from astra.months import retention_cutoff
 from astra.jobs.donations import run_donations_job
 from astra.jobs.wars import run_wars_job
 
@@ -33,10 +38,12 @@ class Jobs(commands.Cog):
         await self.client.__aenter__()
         self.donations_loop.start()
         self.wars_loop.start()
+        self.cleanup_loop.start()
 
     async def cog_unload(self):
         self.donations_loop.cancel()
         self.wars_loop.cancel()
+        self.cleanup_loop.cancel()
         if self.client is not None:
             await self.client.close()
 
@@ -70,15 +77,28 @@ class Jobs(commands.Cog):
 
     @tasks.loop(minutes=60)
     async def wars_loop(self):
+        repo = WarsRepository(self.bot.db)
+        for war_type, name, export in (("regular", "war_stats", export_war_stats), ("cwl", "cwl", export_cwl)):
+            try:
+                result = await run_wars_job(
+                    self.client, RosterRepository(self.bot.db), repo, JobRunsRepository(self.bot.db),
+                    war_type=war_type,
+                )
+                if result.status in ("ok", "partial"):
+                    await self._export(name, export, repo)
+            except Exception:
+                log.exception("%s wars job crashed", war_type)
+
+    @tasks.loop(hours=24)
+    async def cleanup_loop(self):
         try:
-            repo = WarsRepository(self.bot.db)
-            result = await run_wars_job(
-                self.client, RosterRepository(self.bot.db), repo, JobRunsRepository(self.bot.db)
-            )
-            if result.status in ("ok", "partial"):
-                await self._export("war_stats", export_war_stats, repo)
+            s = self.bot.settings
+            cutoff = retention_cutoff(datetime.now(timezone.utc), s.data_retention_months, s.data_start_month)
+            result = await delete_before(self.bot.db, cutoff)
+            log.info("cleanup: removed data before %s (%d wars, %d donation rows, %d job runs)",
+                     cutoff.date(), result.wars, result.donation_rows, result.job_runs)
         except Exception:
-            log.exception("wars job crashed")
+            log.exception("cleanup crashed")
 
 
 async def setup(bot):
