@@ -2,9 +2,6 @@ import discord
 from discord.ext import commands
 from discord.ui import View, Select, Button
 from datetime import datetime
-import gspread
-from google.oauth2.service_account import Credentials
-import os
 import json
 from collections import defaultdict
 
@@ -15,20 +12,10 @@ from astra.timing import timed
 class CWLStats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.gc = self.authorize_gsheet()
         self.owner_accounts = {}  # owner_name: [account_name, ...]
         self.cwl_data = {}        # account_name: full CWL data row
         self.sheet_name = self.get_current_cwl_sheet_name()
         
-
-    def authorize_gsheet(self):
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        cred_str = self.bot.settings.google_credentials_json
-        cred_dict = json.loads(cred_str)
-        creds = Credentials.from_service_account_info(cred_dict, scopes=scope)
-
-       
-        return gspread.authorize(creds)
 
     def get_current_cwl_sheet_name(self):
         now = datetime.now()
@@ -39,11 +26,10 @@ class CWLStats(commands.Cog):
 
         return f"Cwl {month}{now.year}"
 
-    def load_data(self):
+    async def load_data(self):
         try:
             # Load player tags
-            tags_ws = self.gc.open_by_url(self.bot.settings.google_sheet_url).worksheet("Player Tags")
-            tag_data = tags_ws.get_all_values()[1:]  # Skip header
+            tag_data = (await self.bot.sheets.get_values("Player Tags"))[1:]  # Skip header
 
             self.owner_accounts = defaultdict(list)
             tag_map = {}  # tag -> account name
@@ -55,8 +41,7 @@ class CWLStats(commands.Cog):
                     tag_map[name] = tag
 
             # Load CWL data
-            cwl_ws = self.gc.open_by_url(self.bot.settings.google_sheet_url).worksheet(self.sheet_name)            
-            cwl_rows = cwl_ws.get_all_values()
+            cwl_rows = await self.bot.sheets.get_values(self.sheet_name)
             headers = cwl_rows[0]
             data = cwl_rows[1:]
 
@@ -71,7 +56,7 @@ class CWLStats(commands.Cog):
     @commands.command(name="cwlstats", help="Displays the CWL leaderboard for this month")
     async def cwlstats(self, ctx):
         with timed("cwlstats.load"):
-            loaded = self.load_data()
+            loaded = await self.load_data()
         if not loaded:
             await ctx.send("❌ Failed to load CWL data.")
             return

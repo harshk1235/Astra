@@ -1,9 +1,6 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from google.oauth2.service_account import Credentials
-import gspread
-import os
 import json
 
 from astra.timing import timed
@@ -11,19 +8,6 @@ from astra.timing import timed
 class WarlordCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-
-        # Google Sheets setup
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        #creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
-       
-        cred_str = bot.settings.google_credentials_json
-        cred_dict = json.loads(cred_str)
-        creds = Credentials.from_service_account_info(cred_dict, scopes=scope)
-
-        self.gc = gspread.authorize(creds)
-
-        # Get sheet URL from environment variable
-        self.sheet_url = bot.settings.google_sheet_url
 
         # Load emojis from file
         with open("emoji.json", "r", encoding="utf-8") as f:
@@ -37,8 +21,7 @@ class WarlordCog(commands.Cog):
                 channel = ctx.channel
     
             with timed("warstats.load"):
-                sheet = self.gc.open_by_url(self.sheet_url).worksheet("War Stats")
-                data = sheet.get_all_values()
+                data = await self.bot.sheets.get_values("War Stats")
     
             MAX_LENGTH = 4096
             intro = "\n**Greetings, Clashers!**\n\nJoin us in celebrating the noble feats of our champions as we unveil the monthly war leaderboard for Phoenix Reborn\n\n"

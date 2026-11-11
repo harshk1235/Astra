@@ -1,10 +1,6 @@
-import os
 import discord
 from discord.ext import commands
 from discord import app_commands
-import gspread
-import json
-from google.oauth2.service_account import Credentials
 
 from astra.timing import timed
 
@@ -12,28 +8,6 @@ from astra.timing import timed
 class Donations(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-    
-      
-
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        #creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
-       
-        cred_str = bot.settings.google_credentials_json
-        cred_dict = json.loads(cred_str)
-        creds = Credentials.from_service_account_info(cred_dict, scopes=scope)
-    
-        self.gc = gspread.authorize(creds)
-
-
-        self.sheet_url = bot.settings.google_sheet_url
-        # Google Sheets setup
-      #  with open("credentials.json", "r") as f:
-     #       creds = json.load(f)
-      #  self.gc = gspread.service_account_from_dict(creds)
-      #  with open("config.json", "r") as file:
-      #      config = json.load(file)
-      #      self.sheet_url = config.get("google_sheet_url")
-        self.sheet = self.gc.open_by_url(self.sheet_url).worksheet("Donations")
 
     @commands.command()
     async def hello(self,ctx):
@@ -51,7 +25,7 @@ class Donations(commands.Cog):
     async def send_donos_embed(self, source):
         try:
             with timed("donos.load"):
-                data = self.sheet.get_all_values()[1:]  # skip header row
+                data = (await self.bot.sheets.get_values("Donations"))[1:]  # skip header row
             heading = "`Donated\tReceived`\n\n"
             text = ""
 

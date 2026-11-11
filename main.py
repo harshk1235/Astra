@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 
 from astra.config import Settings
+from astra.sheets import SheetsClient
 
 log = logging.getLogger("astra")
 
@@ -17,6 +18,8 @@ class Astra(commands.Bot):
         intents.members = True
         super().__init__(command_prefix="!", intents=intents)
         self.settings = settings  # cogs read config from here
+        # One Sheets client shared by all cogs (no network call happens here).
+        self.sheets = SheetsClient(settings.google_credentials_json, settings.google_sheet_url)
 
     async def setup_hook(self) -> None:
         # Runs once, before connecting. on_ready can fire again after every
