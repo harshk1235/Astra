@@ -47,6 +47,7 @@ class WarStatsEntry:
     triples: int
     hit_rate: int        # % of counted attacks that were 3 stars, rounded down
     destruction: float   # sum of destruction % over counted attacks
+    discord_id: int | None = None   # the account owner's Discord user, for mentions
 
 
 class WarsRepository:
@@ -84,8 +85,10 @@ class WarsRepository:
                 )
             return war_id
 
-    async def war_stats(self, start: datetime, end: datetime) -> list[WarStatsEntry]:
-        """Regular-war leaderboard for wars whose battle day starts in [start, end).
+    async def war_stats(self, start: datetime, end: datetime,
+                        clan_tag: str | None = None) -> list[WarStatsEntry]:
+        """Regular-war leaderboard for wars whose battle day starts in [start, end),
+        for one clan or (clan_tag=None) all tracked clans.
 
         Per linked account: attacks, 3-stars, hit rate and total destruction,
         counting only attacks by TH13+ on an equal or higher TH. TH is the
@@ -99,7 +102,9 @@ class WarsRepository:
                            AND (a.defender_th IS NULL OR a.attacker_th <= a.defender_th)) AS counts
                    FROM war_attacks a
                    JOIN wars w ON w.id = a.war_id
+                   JOIN clans c ON c.tag = w.clan_tag AND c.active
                    WHERE w.war_type = 'regular' AND w.start_time >= $1 AND w.start_time < $2
+                     AND ($4::text IS NULL OR w.clan_tag = $4)
                ),
                per_account AS (
                    SELECT attacker_tag AS tag,
@@ -112,19 +117,20 @@ class WarsRepository:
                )
                SELECT p.tag, acc.name, p.th, p.attacks::int, p.triples::int,
                       (100 * p.triples / p.attacks)::int AS hit_rate,  -- integer division = floor
-                      p.destruction::float8 AS destruction
+                      p.destruction::float8 AS destruction, m.discord_user_id
                FROM per_account p
                JOIN accounts acc ON acc.tag = p.tag AND acc.member_id IS NOT NULL
+               JOIN members m    ON m.id = acc.member_id
                WHERE p.attacks > 0
                ORDER BY p.th DESC, p.triples DESC, hit_rate DESC, p.destruction DESC, acc.name""",
-            start, end, MIN_ATTACKER_TH,
+            start, end, MIN_ATTACKER_TH, clan_tag,
         )
         return [WarStatsEntry(r["tag"], r["name"], r["th"], r["attacks"], r["triples"],
-                              r["hit_rate"], r["destruction"]) for r in rows]
+                              r["hit_rate"], r["destruction"], r["discord_user_id"]) for r in rows]
 
-    async def cwl_stats(self, start: datetime, end: datetime) -> list["CwlEntry"]:
-        """CWL leaderboard for the CWL that starts in [start, end)."""
-        return await cwl_stats(self._pool, start, end)
+    async def cwl_stats(self, start: datetime, end: datetime, clan_tag: str | None = None) -> list["CwlEntry"]:
+        """CWL leaderboard for the CWL that starts in [start, end), one clan or all."""
+        return await cwl_stats(self._pool, start, end, clan_tag)
 
 
 # --- CWL ---------------------------------------------------------------------
@@ -140,9 +146,9 @@ class CwlAttack:
     clan: str
     day: int
     attacker_th: int
-    defender_th: int | None
     stars: int
     destruction: float
+    discord_id: int | None = None
 
 
 @dataclass
@@ -153,8 +159,7 @@ class CwlEntry:
     clan: str
     th: int
     days: dict[int, tuple[int, float]]   # day -> (stars, destruction %)
-    dips: int = 0                        # attacks on a lower TH
-    reaches: int = 0                     # attacks on a higher TH
+    discord_id: int | None = None
 
     @property
     def hits(self) -> int:
@@ -180,20 +185,16 @@ def build_cwl_entries(attacks: list[CwlAttack]) -> list[CwlEntry]:
             continue
         e = entries.get(a.tag)
         if e is None:
-            e = entries[a.tag] = CwlEntry(a.tag, a.name, a.owner, a.clan, a.attacker_th, {})
+            e = entries[a.tag] = CwlEntry(a.tag, a.name, a.owner, a.clan, a.attacker_th, {}, a.discord_id)
         e.th = a.attacker_th                  # latest round wins (sorted by day)
         if a.day in e.days:
             continue                          # one attack per round in CWL
         e.days[a.day] = (a.stars, a.destruction)
-        if a.defender_th is not None:
-            if a.attacker_th > a.defender_th:
-                e.dips += 1
-            elif a.attacker_th < a.defender_th:
-                e.reaches += 1
     return sorted(entries.values(), key=lambda e: (-e.th, -e.triples, -e.stars, e.name.lower()))
 
 
-async def _cwl_attacks(pool: asyncpg.Pool, start: datetime, end: datetime) -> list[CwlAttack]:
+async def _cwl_attacks(pool: asyncpg.Pool, start: datetime, end: datetime,
+                       clan_tag: str | None = None) -> list[CwlAttack]:
     """Our linked accounts' attacks in CWL rounds that start in [start, end).
     Day = whole days since the clan's first round that month, plus one, so a
     round missing from the API can't shift later days either."""
@@ -203,20 +204,22 @@ async def _cwl_attacks(pool: asyncpg.Pool, start: datetime, end: datetime) -> li
                       1 + round(extract(epoch FROM w.start_time
                                 - min(w.start_time) OVER (PARTITION BY w.clan_tag)) / 86400)::int AS day
                FROM wars w
-               JOIN clans c ON c.tag = w.clan_tag
+               JOIN clans c ON c.tag = w.clan_tag AND c.active
                WHERE w.war_type = 'cwl' AND w.start_time >= $1 AND w.start_time < $2
+                 AND ($3::text IS NULL OR w.clan_tag = $3)
            )
            SELECT a.attacker_tag AS tag, acc.name, m.display_name AS owner, r.clan, r.day,
-                  a.attacker_th, a.defender_th, a.stars, a.destruction
+                  a.attacker_th, a.stars, a.destruction, m.discord_user_id
            FROM war_attacks a
            JOIN rounds r     ON r.id = a.war_id
            JOIN accounts acc ON acc.tag = a.attacker_tag
            JOIN members m    ON m.id = acc.member_id""",
-        start, end,
+        start, end, clan_tag,
     )
     return [CwlAttack(r["tag"], r["name"], r["owner"], r["clan"], r["day"], r["attacker_th"],
-                      r["defender_th"], r["stars"], float(r["destruction"])) for r in rows]
+                      r["stars"], float(r["destruction"]), r["discord_user_id"]) for r in rows]
 
 
-async def cwl_stats(pool: asyncpg.Pool, start: datetime, end: datetime) -> list[CwlEntry]:
-    return build_cwl_entries(await _cwl_attacks(pool, start, end))
+async def cwl_stats(pool: asyncpg.Pool, start: datetime, end: datetime,
+                    clan_tag: str | None = None) -> list[CwlEntry]:
+    return build_cwl_entries(await _cwl_attacks(pool, start, end, clan_tag))

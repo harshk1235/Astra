@@ -124,6 +124,23 @@ def test_war_stats_applies_old_sheet_rules():
 
 
 @needs_db
+def test_war_stats_by_clan_and_owner_ids():
+    async def t(pool, roster, wars):
+        await roster.upsert_clan(DOP, "DawnOfPhoenix", "DOP")
+        await pool.execute("UPDATE members SET discord_user_id = 4242 WHERE display_name = 'Harsh'")
+        await wars.upsert_war(war(10), [atk(1, "#PYLQPYLQ", 16, 16, 3, 100)])
+        dop_war = WarRecord(DOP, "regular", None, "#2JLQ98UCR", "Opp", 15, "warEnded",
+                            datetime(2026, 11, 10, 20, tzinfo=UTC), datetime(2026, 11, 11, 20, tzinfo=UTC),
+                            datetime(2026, 11, 12, 20, tzinfo=UTC))
+        await wars.upsert_war(dop_war, [atk(1, "#CCCCCCCC", 17, 17, 3, 100)])
+        assert {e.name for e in await wars.war_stats(*NOV)} == {"Ace", "Cee"}
+        pr = await wars.war_stats(*NOV, clan_tag=PR)
+        assert [(e.name, e.discord_id) for e in pr] == [("Ace", 4242)]
+        assert [e.name for e in await wars.war_stats(*NOV, clan_tag=DOP)] == ["Cee"]
+    with_db(t)
+
+
+@needs_db
 def test_th_is_from_latest_war():
     async def t(pool, roster, wars):
         await wars.upsert_war(war(10), [atk(1, "#PYLQPYLQ", 15, 15, 3, 100)])

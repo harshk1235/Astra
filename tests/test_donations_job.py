@@ -13,7 +13,8 @@ from astra.db.donations import DonationRow, DonationsRepository
 from astra.db.jobs import JobRunsRepository
 from astra.db.roster import RosterRepository
 from astra.jobs import donations as job
-from astra.jobs.donations import fetch_month_events, month_start, run_donations_job, season_key, sum_events
+from astra.jobs.donations import (fetch_month_events, month_start, run_donations_job, season_key, sum_events,
+                                  sum_events_by_clan)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REAL_DONATED = json.loads((FIXTURES / "history_donated.json").read_text())   # recorded from api.clashk.ing
@@ -46,6 +47,12 @@ def test_sum_events_counts_only_tracked_clans():
     items = [ev(PR, 1100), ev(DOP, 2167), ev(OTHER, 3022)]
     assert sum_events(items, {PR, DOP}) == 3267
     assert sum_events(items, {PR}) == 1100
+
+
+def test_sum_events_by_clan():
+    items = [ev(PR, 1100), ev(DOP, 2167), ev(OTHER, 3022), ev(PR, 5)]
+    assert sum_events_by_clan(items, {PR, DOP}) == {PR: 1105, DOP: 2167}
+    assert sum_events_by_clan([], {PR}) == {PR: 0}
 
 
 def test_sum_events_ignores_resets_and_bad_items():
@@ -155,6 +162,9 @@ def test_job_counts_only_donations_in_tracked_clans():
         assert [(e.name, e.donated, e.received) for e in board] == [("Harsh", 1500, 300)]
         everyone = await donations.leaderboard("2026-11", include_inactive=True)
         assert [(e.name, e.donated) for e in everyone] == [("Harsh", 1500), ("Bob", 0)]
+        # Stored per clan: Harsh's 1000 in PR and 500 in DOP are separate rows.
+        assert [(e.name, e.donated) for e in await donations.leaderboard("2026-11", clan_tag=PR)] == [("Harsh", 1000)]
+        assert await pool.fetchval("SELECT count(*) FROM donation_snapshots") == 6   # 3 accounts x 2 clans
         run = await pool.fetchrow("SELECT * FROM job_runs")
         assert (run["job"], run["status"], run["items_ok"], run["finished_at"] is not None) == \
                ("donations", "ok", 3, True)
@@ -194,8 +204,8 @@ def test_no_tracked_clans_skips_without_calling_api():
 @needs_db
 def test_rerun_never_shrinks_a_month_total():
     async def t(pool, roster, donations, jobs):
-        await donations.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", 500, 50)])
-        await donations.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", 300, 60)])  # incomplete answer
+        await donations.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", PR, 500, 50)])
+        await donations.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", PR, 300, 60)])  # incomplete answer
         row = await pool.fetchrow("SELECT donated, received FROM donation_snapshots")
         assert (row["donated"], row["received"]) == (500, 60)
     with_db(t)

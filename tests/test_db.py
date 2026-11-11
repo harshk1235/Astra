@@ -24,6 +24,8 @@ def run_with_db(test_fn):
         try:
             await pool.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
             await run_migrations(pool)
+            await RosterRepository(pool).upsert_clan("#28VUPJRPU", "Phoenix Reborn", "PR")
+            await RosterRepository(pool).upsert_clan("#2Y0VPJUVJ", "DawnOfPhoenix", "DOP")
             await test_fn(pool)
         finally:
             await pool.close()
@@ -68,11 +70,11 @@ def test_donation_leaderboard_sums_accounts_per_person():
         await RosterRepository(pool).import_player_tags(PLAYER_TAGS)
         repo = DonationsRepository(pool)
         await repo.upsert_season("2026-11", [
-            DonationRow("#2Y0VPJUVJ", 1000, 200),
-            DonationRow("#28VUPJRPU", 500, 100),
-            DonationRow("#QQQQQQQQ", 1200, 900),
+            DonationRow("#2Y0VPJUVJ", "#28VUPJRPU", 1000, 200),
+            DonationRow("#28VUPJRPU", "#2Y0VPJUVJ", 500, 100),
+            DonationRow("#QQQQQQQQ", "#28VUPJRPU", 1200, 900),
         ])
-        await repo.upsert_season("2026-10", [DonationRow("#QQQQQQQQ", 9999, 0)])  # other season
+        await repo.upsert_season("2026-10", [DonationRow("#QQQQQQQQ", "#28VUPJRPU", 9999, 0)])  # other season
 
         board = await repo.leaderboard("2026-11")
         assert [(e.name, e.donated, e.received) for e in board] == [
@@ -86,8 +88,8 @@ def test_donation_upsert_overwrites_instead_of_duplicating():
     async def t(pool):
         await RosterRepository(pool).import_player_tags(PLAYER_TAGS)
         repo = DonationsRepository(pool)
-        await repo.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", 10, 1)])
-        await repo.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", 50, 5)])
+        await repo.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", "#28VUPJRPU", 10, 1)])
+        await repo.upsert_season("2026-11", [DonationRow("#QQQQQQQQ", "#28VUPJRPU", 50, 5)])
         assert await pool.fetchval("SELECT count(*) FROM donation_snapshots") == 1
         assert [e.donated for e in await repo.leaderboard("2026-11")] == [50]
     run_with_db(t)
@@ -97,7 +99,6 @@ def test_schema_rejects_bad_data():
     async def t(pool):
         with pytest.raises(asyncpg.CheckViolationError):
             await pool.execute("INSERT INTO clans (tag, name, short_name) VALUES ('nope', 'x', 'X')")
-        await RosterRepository(pool).upsert_clan("#28VUPJRPU", "Phoenix Reborn", "PR")
         with pytest.raises(asyncpg.UniqueViolationError):   # short names are unique
             await RosterRepository(pool).upsert_clan("#2Y0VPJUVJ", "Other", "PR")
     run_with_db(t)
@@ -154,4 +155,22 @@ def test_members_sheet_missing_column_is_rejected():
     async def t(pool):
         with pytest.raises(ValueError, match="missing columns: Role"):
             await RosterRepository(pool).import_members_sheet([HEADER[:-1], ["x"] * 8])
+    run_with_db(t)
+
+
+def test_donation_leaderboard_by_clan():
+    async def t(pool):
+        await RosterRepository(pool).import_player_tags(PLAYER_TAGS)
+        repo = DonationsRepository(pool)
+        await repo.upsert_season("2026-11", [
+            DonationRow("#2Y0VPJUVJ", "#28VUPJRPU", 1000, 200),   # Harsh, in PR
+            DonationRow("#2Y0VPJUVJ", "#2Y0VPJUVJ", 300, 30),     # Harsh's same account, earlier in DOP
+            DonationRow("#QQQQQQQQ", "#2Y0VPJUVJ", 1200, 900),    # Bob, in DOP
+        ])
+        both = [(e.name, e.donated) for e in await repo.leaderboard("2026-11")]
+        assert both == [("Harsh", 1300), ("Bob", 1200)]
+        pr = [(e.name, e.donated) for e in await repo.leaderboard("2026-11", clan_tag="#28VUPJRPU")]
+        assert pr == [("Harsh", 1000)]
+        dop = [(e.name, e.donated) for e in await repo.leaderboard("2026-11", clan_tag="#2Y0VPJUVJ")]
+        assert dop == [("Bob", 1200), ("Harsh", 300)]
     run_with_db(t)

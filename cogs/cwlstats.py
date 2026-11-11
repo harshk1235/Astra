@@ -8,9 +8,10 @@ import json
 import logging
 from collections import defaultdict
 
+from astra.clan_option import clan_autocomplete, resolve_filters
 from astra.db.wars import WarsRepository
 from astra.exports import cwl_rows
-from astra.month_option import MonthError, month_autocomplete, resolve_month
+from astra.month_option import MonthError, month_autocomplete
 from astra.months import cwl_sheet_name, month_label, next_month_start
 from astra.timing import timed
 
@@ -24,19 +25,21 @@ class CWLStats(commands.Cog):
     def get_current_cwl_sheet_name(self):
         return cwl_sheet_name(datetime.now(timezone.utc))
 
-    async def load_data(self, start):
-        """(owner -> [account keys], key -> CWL row). Rows use the old CWL sheet's
-        23-column layout either way. With a database, keys are account tags
-        (names aren't unique); without one, the old sheets are read as before.
+    async def load_data(self, start, clan_tag=None):
+        """(owner -> [account keys], key -> CWL row). Rows use the CWL sheet's
+        21 columns (name, tag, clan, TH, hits, triples, stars, then stars and %
+        for days 1-7), plus the owner's Discord ID as a 22nd column when known.
+        With a database, keys are account tags (names aren't unique); without
+        one, the old sheets are read as before.
 
         Returned instead of stored on the cog: two people running /cwlstats for
         different months at the same time must not see each other's data."""
         if self.bot.db is not None:
-            entries = await WarsRepository(self.bot.db).cwl_stats(start, next_month_start(start))
+            entries = await WarsRepository(self.bot.db).cwl_stats(start, next_month_start(start), clan_tag)
             owner_accounts, cwl_data = defaultdict(list), {}
             for entry, row in zip(entries, cwl_rows(entries)[1:]):
                 owner_accounts[entry.owner].append(entry.tag)
-                cwl_data[entry.tag] = [str(c) for c in row]
+                cwl_data[entry.tag] = [str(c) for c in row] + [str(entry.discord_id or "")]
             return owner_accounts, cwl_data
 
         tag_data = (await self.bot.sheets.get_values("Player Tags"))[1:]  # Skip header
@@ -49,22 +52,24 @@ class CWLStats(commands.Cog):
         # Work out the month's sheet on every call: computing it once at
         # startup kept reading last month's sheet until a restart.
         cwl_rows_ = await self.bot.sheets.get_values(cwl_sheet_name(start))
-        cwl_data = {row[0]: row for row in cwl_rows_[1:] if row and row[0] in names}
+        # The old sheets had Dips/Reaches in columns 22-23; drop them.
+        cwl_data = {row[0]: row[:21] for row in cwl_rows_[1:] if row and row[0] in names}
         return owner_accounts, cwl_data
 
-    # Hybrid: works as !cwlstats [month] and as /cwlstats.
+    # Hybrid: works as !cwlstats [month] [clan] and as /cwlstats.
     @commands.hybrid_command(name="cwlstats", description="CWL leaderboard for a month")
-    @app_commands.describe(month="Which month's CWL (default: this month)")
-    @app_commands.autocomplete(month=month_autocomplete)
-    async def cwlstats(self, ctx, month: Optional[str] = None):
+    @app_commands.describe(month="Which month's CWL (default: this month)",
+                           clan="One clan only (default: all clans)")
+    @app_commands.autocomplete(month=month_autocomplete, clan=clan_autocomplete)
+    async def cwlstats(self, ctx, month: Optional[str] = None, clan: Optional[str] = None):
         await ctx.defer()   # slash commands must be acknowledged within 3 seconds
         try:
-            start = resolve_month(self.bot.settings, month)
+            start, clan_ = await resolve_filters(self.bot, month, clan)
         except MonthError as e:
             return await ctx.send(str(e), ephemeral=True)
         try:
             with timed("cwlstats.load"):
-                owner_accounts, cwl_data = await self.load_data(start)
+                owner_accounts, cwl_data = await self.load_data(start, clan_.tag if clan_ else None)
         except Exception:
             log.exception("Error loading CWL data")
             await ctx.send("❌ Failed to load CWL data.")
@@ -76,49 +81,53 @@ class CWLStats(commands.Cog):
         # Only people who actually played this CWL go in the dropdown
         # (Discord allows at most 25 options).
         owners = sorted(o for o, accs in owner_accounts.items() if any(a in cwl_data for a in accs))
-        pages = self.build_leaderboard_pages(cwl_data, month_label(start))
+        title = f"{month_label(start)}" + (f" · {clan_.alias}" if clan_ else "")
+        pages = self.build_leaderboard_pages(cwl_data, title)
         view = CWLLeaderboardView(bot=self.bot, pages=pages, owner_list=owners, ctx=ctx,
                                   owner_accounts=owner_accounts, cwl_data=cwl_data, month=month_label(start))
         await ctx.send(embed=pages[0], view=view)
 
-    def build_leaderboard_pages(self, cwl_data, month, per_page=30):
-        pages = []
+    def build_leaderboard_pages(self, cwl_data, month, per_page=25):
+        """Leaderboard pages in CWL sheet order (TH, triples, stars). A page
+        holds up to `per_page` accounts and always stays under Discord's
+        4096-character embed limit, now that lines carry a mention."""
         emoji_path = "emoji.json"
         with open(emoji_path, "r", encoding="utf-8") as f:
             emoji_data = json.load(f)
 
         blank = "<:blank_space:1229767163221381173>"
+        header = f"{blank}{blank}`⚔️   🎯   ⭐`\n\n"
+        intro = f"**Top performers in {month}'s CWL**\n\n"
 
-        # Step 1: Flatten all CWL rows in original sheet order
-        # No sorting, no regrouping — we use CWL sheet order directly
-        all_rows = list(cwl_data.values())
+        lines = []
+        for row in cwl_data.values():
+            name, th = row[0], row[3]
+            hits = int(row[4]) if row[4].isdigit() else 0
+            triples = int(row[5]) if row[5].isdigit() else 0
+            total = int(row[6]) if row[6].isdigit() else 0
+            mention = f" <@{row[21]}>" if len(row) > 21 and row[21].isdigit() else ""
+            th_emoji = emoji_data.get(f"th{th}", "")
+            lines.append(f"{th_emoji}{blank}`{hits:^3}   {triples:^2}   {total:^3}`    {name}{mention}\n")
 
-        # Step 2: Paginate by 30 entries per page
-        for i in range(0, len(all_rows), per_page):
-            chunk = all_rows[i:i + per_page]
-            text = f"{blank}{blank}`⚔️   🎯   ⭐   ⬇️   ⬆️`\n\n"  # Header line
+        chunks, current = [], []
+        for line in lines:
+            size = len(intro) + len(header) + sum(map(len, current)) + len(line)
+            if current and (len(current) >= per_page or size > 4000):
+                chunks.append(current)
+                current = []
+            current.append(line)
+        if current:
+            chunks.append(current)
 
-            for row in chunk:
-                name = row[0]  # account name
-                th = row[3]
-                hits = int(row[4]) if row[4].isdigit() else 0
-                triples = int(row[5]) if row[5].isdigit() else 0
-                total = int(row[6]) if row[6].isdigit() else 0
-                dips = int(row[21]) if len(row) > 21 and row[21].isdigit() else 0
-                reaches = int(row[22]) if len(row) > 22 and row[22].isdigit() else 0
-
-                th_emoji = emoji_data.get(f"th{th}", "")
-                line = f"{th_emoji}{blank}`{hits:^3}   {triples:^2}   {total:^3}   {dips:^2}   {reaches:^2}`    {name}\n"
-                text += line
-
+        pages = []
+        for n, chunk in enumerate(chunks, 1):
             embed = discord.Embed(
                 title="🏆 CWL Leaderboard",
-                description=f"**Top performers in {month}'s CWL**\n\n" + text,
+                description=intro + header + "".join(chunk),
                 color=0x000000
             )
-            embed.set_footer(text=f"Phoenix Reborn – Page {i // per_page + 1}")
+            embed.set_footer(text=f"Phoenix Reborn – Page {n}/{len(chunks)}")
             pages.append(embed)
-
         return pages
 
 

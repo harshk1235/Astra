@@ -48,19 +48,25 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def sum_events(items: Iterable[dict[str, Any]], clan_tags: set[str]) -> int:
-    """Total of positive deltas for events in `clan_tags`.
+def sum_events_by_clan(items: Iterable[dict[str, Any]], clan_tags: set[str]) -> dict[str, int]:
+    """Total of positive deltas per clan, for every clan in `clan_tags` (0 if none).
     Negative or zero deltas (e.g. the in-game counter resetting at season
-    end) and malformed items are ignored."""
-    total = 0
+    end), events in other clans and malformed items are ignored."""
+    totals = dict.fromkeys(clan_tags, 0)
     for e in items:
         try:
             delta = int(e.get("delta") or 0)
         except (TypeError, ValueError):
             continue
-        if delta > 0 and e.get("clanTag") in clan_tags:
-            total += delta
-    return total
+        clan = e.get("clanTag")
+        if delta > 0 and clan in totals:
+            totals[clan] += delta
+    return totals
+
+
+def sum_events(items: Iterable[dict[str, Any]], clan_tags: set[str]) -> int:
+    """Total over all of `clan_tags`."""
+    return sum(sum_events_by_clan(items, clan_tags).values())
 
 
 async def fetch_month_events(client: JsonClient, tag: str, stat: str, start: datetime,
@@ -124,16 +130,19 @@ async def run_donations_job(
         tags = await roster.list_account_tags()
         run_id = await jobs.start(JOB_NAME)
 
-        async def fetch_one(tag: str) -> DonationRow:
+        async def fetch_one(tag: str) -> list[DonationRow]:
             donated_events, received_events = await asyncio.gather(
                 fetch_month_events(client, tag, "donated", start, end),
                 fetch_month_events(client, tag, "received", start, end),
             )
-            return DonationRow(tag, sum_events(donated_events, clan_tags), sum_events(received_events, clan_tags))
+            donated = sum_events_by_clan(donated_events, clan_tags)
+            received = sum_events_by_clan(received_events, clan_tags)
+            return [DonationRow(tag, clan, donated[clan], received[clan]) for clan in sorted(clan_tags)]
 
         # The client limits concurrency; one failed account doesn't stop the rest.
         results = await asyncio.gather(*(fetch_one(t) for t in tags), return_exceptions=True)
-        rows = [r for r in results if isinstance(r, DonationRow)]
+        per_account = [r for r in results if isinstance(r, list)]
+        rows = [row for account_rows in per_account for row in account_rows]
         errors = [(t, r) for t, r in zip(tags, results) if isinstance(r, BaseException)]
         for tag, err in errors[:10]:
             log.warning("donations: %s failed: %s", tag, err)
@@ -146,12 +155,12 @@ async def run_donations_job(
 
         if not errors:
             status = "ok"
-        elif rows:
+        elif per_account:
             status = "partial"
         else:
             status = "failed"
         summary = "; ".join(f"{t}: {e}" for t, e in errors[:5])[:500] or None
-        await jobs.finish(run_id, status, items_ok=len(rows), items_failed=len(errors), error=summary)
+        await jobs.finish(run_id, status, items_ok=len(per_account), items_failed=len(errors), error=summary)
         log.info("donations job %s: %d ok, %d failed (season %s, clans %s)",
-                 status, len(rows), len(errors), season, ", ".join(sorted(clan_tags)))
-        return JobResult(status, len(rows), len(errors))
+                 status, len(per_account), len(errors), season, ", ".join(sorted(clan_tags)))
+        return JobResult(status, len(per_account), len(errors))

@@ -20,8 +20,8 @@ PR, DOP = "#28VUPJRPU", "#2Y0VPJUVJ"
 CWL_FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "war_cwl.json").read_text())
 
 
-def att(tag, day, stars, pct=100.0, th=16, def_th=16, name=None, owner="Owner", clan="Phoenix Reborn"):
-    return CwlAttack(tag, name or tag, owner, clan, day, th, def_th, stars, pct)
+def att(tag, day, stars, pct=100.0, th=16, name=None, owner="Owner", clan="Phoenix Reborn", discord_id=None):
+    return CwlAttack(tag, name or tag, owner, clan, day, th, stars, pct, discord_id)
 
 
 # --- day mapping and totals (pure) -------------------------------------------------
@@ -32,14 +32,6 @@ def test_missed_day_stays_empty_instead_of_shifting():
     assert sorted(e.days) == [1, 3, 4]
     assert e.days[3] == (2, 85)
     assert (e.hits, e.triples, e.stars) == (3, 1, 6)
-
-
-def test_dips_and_reaches():
-    [e] = build_cwl_entries([att("#P", 1, 3, th=16, def_th=15),   # dip
-                             att("#P", 2, 2, th=16, def_th=17),   # reach
-                             att("#P", 3, 3, th=16, def_th=16),
-                             att("#P", 4, 3, th=16, def_th=None)])
-    assert (e.dips, e.reaches) == (1, 1)
 
 
 def test_sorted_by_th_then_triples_then_stars():
@@ -57,12 +49,13 @@ def test_th_from_latest_round_and_days_out_of_range_ignored():
 
 
 def test_cwl_rows_layout_matches_old_sheet():
-    [e] = build_cwl_entries([att("#P", 1, 3, 100, name="Acc"), att("#P", 3, 2, 85.5, name="Acc")])
+    [e] = build_cwl_entries([att("#P", 1, 3, 100, name="Acc", discord_id=7), att("#P", 3, 2, 85.5, name="Acc")])
     header, row = cwl_rows([e])
-    assert header == CWL_HEADER and len(row) == 23
+    assert header == CWL_HEADER and len(row) == 21        # Dips and Reaches are gone
+    assert "Dips" not in header and header[-1] == "Day 7 %"
     assert row[:7] == ["Acc", "#P", "Phoenix Reborn", 16, 2, 1, 5]
     assert row[7:13] == [3, 100, "", "", 2, 85.5]       # Day 2 blank, in its own column
-    assert row[21:] == [0, 0]                            # dips, reaches (cog reads row[21], row[22])
+    assert e.discord_id == 7
 
 
 # --- against a real Postgres --------------------------------------------------------
@@ -115,8 +108,10 @@ def test_cwl_days_come_from_round_dates():
         board = {e.tag: e for e in await wars.cwl_stats(*NOV)}
         assert sorted(board["#PYLQPYLQ"].days) == [1, 4]             # still day 4, not "day 3"
         assert sorted(board["#CCCCCCCC"].days) == [2, 4]
-        assert (board["#PYLQPYL2"].clan, board["#PYLQPYL2"].reaches) == ("DawnOfPhoenix", 1)
+        assert board["#PYLQPYL2"].clan == "DawnOfPhoenix"
         assert board["#PYLQPYLQ"].owner == board["#PYLQPYL2"].owner == "Harsh"
+        only_dop = await wars.cwl_stats(*NOV, clan_tag=DOP)
+        assert [e.tag for e in only_dop] == ["#PYLQPYL2"]
     with_db(t)
 
 
@@ -141,8 +136,8 @@ def test_retention_deletes_only_older_months():
         await wars.upsert_war(cwl_round(PR, 1, start=datetime(2026, 9, 2, tzinfo=UTC)), [a(1, "#PYLQPYLQ", 3)])
         await wars.upsert_war(cwl_round(PR, 1), [a(1, "#PYLQPYLQ", 3)])
         don = DonationsRepository(pool)
-        await don.upsert_season("2026-09", [DonationRow("#PYLQPYLQ", 5, 5)])
-        await don.upsert_season("2026-11", [DonationRow("#PYLQPYLQ", 9, 9)])
+        await don.upsert_season("2026-09", [DonationRow("#PYLQPYLQ", PR, 5, 5)])
+        await don.upsert_season("2026-11", [DonationRow("#PYLQPYLQ", PR, 9, 9)])
 
         r = await delete_before(pool, datetime(2026, 10, 1, tzinfo=UTC))
         assert (r.wars, r.donation_rows) == (1, 1)

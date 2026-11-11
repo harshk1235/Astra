@@ -9,6 +9,7 @@ import asyncpg
 @dataclass(frozen=True)
 class DonationRow:
     account_tag: str
+    clan_tag: str        # the clan the donations were made in
     donated: int
     received: int
 
@@ -18,6 +19,7 @@ class LeaderboardEntry:
     name: str        # the person's display name (all their accounts summed)
     donated: int
     received: int
+    discord_id: int | None = None
 
 
 class DonationsRepository:
@@ -33,37 +35,41 @@ class DonationsRepository:
         if not rows:
             return
         await self._pool.executemany(
-            """INSERT INTO donation_snapshots (account_tag, season, donated, received)
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (account_tag, season) DO UPDATE
+            """INSERT INTO donation_snapshots (account_tag, season, clan_tag, donated, received)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (account_tag, season, clan_tag) DO UPDATE
                SET donated  = GREATEST(donation_snapshots.donated,  EXCLUDED.donated),
                    received = GREATEST(donation_snapshots.received, EXCLUDED.received),
                    fetched_at = now()""",
-            [(r.account_tag, season, r.donated, r.received) for r in rows],
+            [(r.account_tag, season, r.clan_tag, r.donated, r.received) for r in rows],
         )
 
-    async def leaderboard(self, season: str, *, include_inactive: bool = False) -> list[LeaderboardEntry]:
+    async def leaderboard(self, season: str, *, clan_tag: str | None = None,
+                          include_inactive: bool = False) -> list[LeaderboardEntry]:
         """Per person, summed over all their accounts, most donated first.
         Same grouping as the old Donations sheet (by 'singular name').
 
-        By default only people who are in a tracked clan, or who donated
-        something this season, are listed; linked players from other clans
+        clan_tag: only donations made in that clan, and only that clan's
+        members. Otherwise all tracked clans.
+        By default only people who are in a tracked clan (or that clan), or
+        who donated something, are listed; linked players from other clans
         would otherwise fill the bottom with zeros."""
         rows = await self._pool.fetch(
-            """SELECT m.display_name AS name,
+            """SELECT m.display_name AS name, m.discord_user_id,
                       SUM(d.donated)::int  AS donated,
                       SUM(d.received)::int AS received
                FROM donation_snapshots d
+               JOIN clans c    ON c.tag = d.clan_tag AND c.active
                JOIN accounts a ON a.tag = d.account_tag
                JOIN members  m ON m.id  = a.member_id
-               WHERE d.season = $1
-               GROUP BY m.id, m.display_name
-               HAVING $2
+               WHERE d.season = $1 AND ($2::text IS NULL OR d.clan_tag = $2)
+               GROUP BY m.id, m.display_name, m.discord_user_id
+               HAVING $3
                    OR SUM(d.donated) > 0
                    OR EXISTS (SELECT 1 FROM clan_memberships cm
-                              JOIN clans c ON c.tag = cm.clan_tag AND c.active
-                              WHERE cm.member_id = m.id)
+                              JOIN clans c2 ON c2.tag = cm.clan_tag AND c2.active
+                              WHERE cm.member_id = m.id AND ($2::text IS NULL OR cm.clan_tag = $2))
                ORDER BY donated DESC, received ASC, name""",
-            season, include_inactive,
+            season, clan_tag, include_inactive,
         )
-        return [LeaderboardEntry(r["name"], r["donated"], r["received"]) for r in rows]
+        return [LeaderboardEntry(r["name"], r["donated"], r["received"], r["discord_user_id"]) for r in rows]

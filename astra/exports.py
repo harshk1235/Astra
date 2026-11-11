@@ -21,8 +21,7 @@ WAR_STATS_HEADER = ["Player", "TH Level", "Total Attacks", "Total 3 Stars", "Hit
 
 
 CWL_HEADER = (["Name", "Tag", "Clan", "TH", "Total Hits", "Triples", "Total Stars"]
-              + [h for d in range(1, CWL_DAYS + 1) for h in (f"Day {d} Stars", f"Day {d} %")]
-              + ["Dips", "Reaches"])
+              + [h for d in range(1, CWL_DAYS + 1) for h in (f"Day {d} Stars", f"Day {d} %")])
 
 
 class SheetWriter(Protocol):
@@ -44,15 +43,16 @@ def war_stats_rows(entries: list[WarStatsEntry]) -> list[list]:
 
 
 def cwl_rows(entries: list[CwlEntry]) -> list[list]:
-    """Same 23 columns as the old CWL sheet. A day with no attack is left
-    blank, in its own column, so later days never shift left."""
+    """The old CWL sheet's columns, minus Dips and Reaches (21 columns). A day
+    with no attack is left blank, in its own column, so later days never
+    shift left."""
     rows = [CWL_HEADER]
     for e in entries:
         row = [e.name, e.tag, e.clan, e.th, e.hits, e.triples, e.stars]
         for d in range(1, CWL_DAYS + 1):
             stars, pct = e.days.get(d, ("", ""))
             row += [stars, _number(pct) if pct != "" else ""]
-        rows.append(row + [e.dips, e.reaches])
+        rows.append(row)
     return rows
 
 
