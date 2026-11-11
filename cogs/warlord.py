@@ -6,6 +6,8 @@ import gspread
 import os
 import json
 
+from astra.timing import timed
+
 class WarlordCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -34,8 +36,9 @@ class WarlordCog(commands.Cog):
             if channel is None:
                 channel = ctx.channel
     
-            sheet = self.gc.open_by_url(self.sheet_url).worksheet("War Stats")
-            data = sheet.get_all_values()
+            with timed("warstats.load"):
+                sheet = self.gc.open_by_url(self.sheet_url).worksheet("War Stats")
+                data = sheet.get_all_values()
     
             MAX_LENGTH = 4096
             intro = "\n**Greetings, Clashers!**\n\nJoin us in celebrating the noble feats of our champions as we unveil the monthly war leaderboard for Phoenix Reborn\n\n"

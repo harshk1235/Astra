@@ -8,6 +8,8 @@ import os
 import json
 from collections import defaultdict
 
+from astra.timing import timed
+
 
 
 class CWLStats(commands.Cog):
@@ -68,7 +70,9 @@ class CWLStats(commands.Cog):
             return False
     @commands.command(name="cwlstats", help="Displays the CWL leaderboard for this month")
     async def cwlstats(self, ctx):
-        if not self.load_data():
+        with timed("cwlstats.load"):
+            loaded = self.load_data()
+        if not loaded:
             await ctx.send("❌ Failed to load CWL data.")
             return
 

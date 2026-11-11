@@ -6,6 +6,8 @@ import gspread
 import json
 from google.oauth2.service_account import Credentials
 
+from astra.timing import timed
+
 
 class Donations(commands.Cog):
     def __init__(self, bot):
@@ -48,7 +50,8 @@ class Donations(commands.Cog):
 
     async def send_donos_embed(self, source):
         try:
-            data = self.sheet.get_all_values()[1:]  # skip header row
+            with timed("donos.load"):
+                data = self.sheet.get_all_values()[1:]  # skip header row
             heading = "`Donated\tReceived`\n\n"
             text = ""
 
