@@ -34,6 +34,8 @@ class Settings:
     # Optional while cogs still read Sheets; required once they read Postgres.
     database_url: str | None = None
     clashking_base_url: str = "https://api.clashk.ing"
+    # Write leaderboards back to GOOGLE_SHEET_URL after each job (needs Editor access).
+    sheets_export: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -58,4 +60,5 @@ class Settings:
             google_sheet_url=sheet_url,
             database_url=os.environ.get("DATABASE_URL", "").strip() or None,
             clashking_base_url=os.environ.get("CLASHKING_BASE_URL", "").strip() or "https://api.clashk.ing",
+            sheets_export=os.environ.get("SHEETS_EXPORT", "true").strip().lower() not in ("0", "false", "no", "off"),
         )

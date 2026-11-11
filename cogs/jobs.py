@@ -1,4 +1,9 @@
-"""Scheduled data jobs. Runs only when the bot has a database (DATABASE_URL)."""
+"""Scheduled data jobs. Runs only when the bot has a database (DATABASE_URL).
+
+Every hour: fetch from ClashKing into Postgres, then export the leaderboards
+to the Google Sheet (unless SHEETS_EXPORT=false). Each step is recorded in
+job_runs, so a failing export shows up even though the fetch succeeded.
+"""
 import logging
 
 from discord.ext import commands, tasks
@@ -7,7 +12,10 @@ from astra.clashking import ClashKingClient
 from astra.db.donations import DonationsRepository
 from astra.db.jobs import JobRunsRepository
 from astra.db.roster import RosterRepository
+from astra.db.wars import WarsRepository
+from astra.exports import export_donations, export_war_stats
 from astra.jobs.donations import run_donations_job
+from astra.jobs.wars import run_wars_job
 
 log = logging.getLogger(__name__)
 
@@ -24,25 +32,51 @@ class Jobs(commands.Cog):
         self.client = ClashKingClient(self.bot.settings.clashking_base_url)
         await self.client.__aenter__()
         self.donations_loop.start()
+        self.wars_loop.start()
 
     async def cog_unload(self):
         self.donations_loop.cancel()
+        self.wars_loop.cancel()
         if self.client is not None:
             await self.client.close()
 
+    async def _export(self, name: str, export, repo) -> None:
+        if not self.bot.settings.sheets_export:
+            return
+        jobs = JobRunsRepository(self.bot.db)
+        run_id = await jobs.start(f"export:{name}")
+        try:
+            rows = await export(self.bot.sheets, repo)
+            await jobs.finish(run_id, "ok", items_ok=rows, items_failed=0)
+        except Exception as e:
+            log.exception("export:%s failed", name)
+            await jobs.finish(run_id, "failed", items_ok=0, items_failed=1, error=repr(e)[:500])
+
+    # One bad run must never kill a loop: log it (it's also in job_runs) and retry next hour.
+
     @tasks.loop(minutes=60)
     async def donations_loop(self):
-        # Never let one bad run kill the loop: log it and try again next hour.
-        # The failure is also recorded in job_runs.
         try:
-            await run_donations_job(
-                self.client,
-                RosterRepository(self.bot.db),
-                DonationsRepository(self.bot.db),
-                JobRunsRepository(self.bot.db),
+            repo = DonationsRepository(self.bot.db)
+            result = await run_donations_job(
+                self.client, RosterRepository(self.bot.db), repo, JobRunsRepository(self.bot.db)
             )
+            if result.status in ("ok", "partial"):
+                await self._export("donations", export_donations, repo)
         except Exception:
             log.exception("donations job crashed")
+
+    @tasks.loop(minutes=60)
+    async def wars_loop(self):
+        try:
+            repo = WarsRepository(self.bot.db)
+            result = await run_wars_job(
+                self.client, RosterRepository(self.bot.db), repo, JobRunsRepository(self.bot.db)
+            )
+            if result.status in ("ok", "partial"):
+                await self._export("war_stats", export_war_stats, repo)
+        except Exception:
+            log.exception("wars job crashed")
 
 
 async def setup(bot):

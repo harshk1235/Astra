@@ -2,8 +2,16 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
+import logging
 
+from datetime import datetime, timezone
+
+from astra.db.wars import WarsRepository
+from astra.exports import next_month_start, war_stats_rows
+from astra.jobs.donations import month_start
 from astra.timing import timed
+
+log = logging.getLogger(__name__)
 
 class WarlordCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -21,7 +29,11 @@ class WarlordCog(commands.Cog):
                 channel = ctx.channel
     
             with timed("warstats.load"):
-                data = await self.bot.sheets.get_values("War Stats")
+                data = await self.load_rows()
+            if len(data) <= 1:
+                # Used to send nothing at all, which looked like the bot was broken.
+                await ctx.send("No war stats yet this month.")
+                return
     
             MAX_LENGTH = 4096
             intro = "\n**Greetings, Clashers!**\n\nJoin us in celebrating the noble feats of our champions as we unveil the monthly war leaderboard for Phoenix Reborn\n\n"
@@ -68,11 +80,18 @@ class WarlordCog(commands.Cog):
             for embed in embeds:
                 await channel.send(embed=embed)
     
-        except Exception as e:
-            print("Error in !warstats:", e)
+        except Exception:
+            log.exception("Error in !warstats")
             await ctx.send("❌ An error occurred while retrieving war stats.")
 
-
+    async def load_rows(self):
+        """Rows including the header, in the War Stats sheet layout. Reads
+        Postgres when the bot has a database, otherwise the sheet as before."""
+        if self.bot.db is None:
+            return await self.bot.sheets.get_values("War Stats")
+        now = datetime.now(timezone.utc)
+        entries = await WarsRepository(self.bot.db).war_stats(month_start(now), next_month_start(now))
+        return [[str(c) for c in r] for r in war_stats_rows(entries)]
 
 
 async def setup(bot: commands.Bot):

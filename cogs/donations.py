@@ -3,7 +3,12 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 
+from astra.db.donations import DonationsRepository
+from astra.db.jobs import JobRunsRepository
+from astra.exports import donation_rows
+from astra.jobs.donations import season_key
 from astra.timing import timed
+from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +38,7 @@ class Donations(commands.Cog):
             await source.response.defer()
         try:
             with timed("donos.load"):
-                data = (await self.bot.sheets.get_values("Donations"))[1:]  # skip header row
+                data, updated_at = await self.load_rows()
             heading = "`Donated\tReceived`\n\n"
             text = ""
 
@@ -53,6 +58,9 @@ class Donations(commands.Cog):
                 icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png?ex=68500f97&is=684ebe17&hm=8dde095ff75caa82b9e8a2ded1b35682220e8a47ba0cf3026c64f491b89ea8d3&=&format=webp&quality=lossless"
             )
 
+            if updated_at is not None:
+                embed.timestamp = updated_at  # Discord shows it as "Last updated" local time
+
             if is_slash:
                 await source.followup.send(embed=embed)
             else:
@@ -64,6 +72,16 @@ class Donations(commands.Cog):
                 await source.followup.send("Failed to fetch donation stats.")
             else:
                 await source.send("Failed to fetch donation stats.")
+
+    async def load_rows(self):
+        """(rows without header, last-updated time). Reads Postgres when the
+        bot has a database, otherwise the Donations sheet as before."""
+        if self.bot.db is None:
+            return (await self.bot.sheets.get_values("Donations"))[1:], None
+        entries = await DonationsRepository(self.bot.db).leaderboard(season_key(datetime.now(timezone.utc)))
+        rows = [[str(c) for c in r] for r in donation_rows(entries)[1:]]
+        return rows, await JobRunsRepository(self.bot.db).last_success("donations")
+
 
 async def setup(bot):
     cog = Donations(bot)

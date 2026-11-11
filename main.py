@@ -20,7 +20,11 @@ class Astra(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.settings = settings  # cogs read config from here
         # One Sheets client shared by all cogs (no network call happens here).
-        self.sheets = SheetsClient(settings.google_credentials_json, settings.google_sheet_url)
+        # Write access is only needed when Postgres exports leaderboards to the sheet.
+        self.sheets = SheetsClient(
+            settings.google_credentials_json, settings.google_sheet_url,
+            writable=bool(settings.database_url and settings.sheets_export),
+        )
         self.db = None  # asyncpg pool, set in setup_hook when DATABASE_URL is configured
 
     async def setup_hook(self) -> None:
