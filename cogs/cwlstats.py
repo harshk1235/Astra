@@ -21,7 +21,7 @@ class CWLStats(commands.Cog):
 
     def authorize_gsheet(self):
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        cred_str = os.environ.get("CREDENTIALS_JSON")
+        cred_str = self.bot.settings.google_credentials_json
         cred_dict = json.loads(cred_str)
         creds = Credentials.from_service_account_info(cred_dict, scopes=scope)
 
@@ -40,7 +40,7 @@ class CWLStats(commands.Cog):
     def load_data(self):
         try:
             # Load player tags
-            tags_ws = self.gc.open_by_url(os.environ["SHEET_URL"]).worksheet("Player Tags")
+            tags_ws = self.gc.open_by_url(self.bot.settings.google_sheet_url).worksheet("Player Tags")
             tag_data = tags_ws.get_all_values()[1:]  # Skip header
 
             self.owner_accounts = defaultdict(list)
@@ -53,7 +53,7 @@ class CWLStats(commands.Cog):
                     tag_map[name] = tag
 
             # Load CWL data
-            cwl_ws = self.gc.open_by_url(os.environ["SHEET_URL"]).worksheet(self.sheet_name)            
+            cwl_ws = self.gc.open_by_url(self.bot.settings.google_sheet_url).worksheet(self.sheet_name)            
             cwl_rows = cwl_ws.get_all_values()
             headers = cwl_rows[0]
             data = cwl_rows[1:]

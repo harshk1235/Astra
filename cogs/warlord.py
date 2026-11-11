@@ -14,14 +14,14 @@ class WarlordCog(commands.Cog):
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         #creds = Credentials.from_service_account_file("/etc/secrets/credentials.json", scopes=scope)
        
-        cred_str = os.environ.get("CREDENTIALS_JSON")
+        cred_str = bot.settings.google_credentials_json
         cred_dict = json.loads(cred_str)
         creds = Credentials.from_service_account_info(cred_dict, scopes=scope)
 
         self.gc = gspread.authorize(creds)
 
         # Get sheet URL from environment variable
-        self.sheet_url = os.environ.get("GOOGLE_SHEET_URL")
+        self.sheet_url = bot.settings.google_sheet_url
 
         # Load emojis from file
         with open("emoji.json", "r", encoding="utf-8") as f:

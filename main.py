@@ -1,11 +1,11 @@
 import discord
 from discord.ext import commands
 import logging
-#from dotenv import load_dotenv
 import os
 
-#load_dotenv()
-TOKEN = os.environ.get("TOKEN")
+from astra.config import Settings
+
+settings = Settings.from_env()
 
 # Define intents and bot setup
 intents = discord.Intents.default()
@@ -16,6 +16,7 @@ intents.members = True
 logging.basicConfig(level=logging.INFO)
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+bot.settings = settings  # cogs read config from here
 
 @bot.event
 async def on_ready():
@@ -31,8 +32,8 @@ async def on_ready():
                 logging.error(f"❌ Failed to load cog: {cog_name} — {e}")
 
     try:
-        synced = await bot.tree.sync(guild=discord.Object(id=1228025729183383685))
-        logging.info(f"🔁 Synced {len(synced)} slash command(s) to guild {1228025729183383685}")
+        synced = await bot.tree.sync(guild=discord.Object(id=settings.guild_id))
+        logging.info(f"🔁 Synced {len(synced)} slash command(s) to guild {settings.guild_id}")
     except Exception as e:
         logging.error(f"⚠️ Slash command sync failed: {e}")
 
@@ -42,4 +43,4 @@ async def on_ready():
 async def ping(ctx):
     await ctx.send("Pong!")
 
-bot.run(TOKEN)
+bot.run(settings.discord_token)
