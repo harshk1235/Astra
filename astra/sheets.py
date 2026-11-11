@@ -35,14 +35,16 @@ class SheetsClient:
             self._spreadsheet = self._gc.open_by_url(self._sheet_url)
         return self._spreadsheet
 
-    def _read_sync(self, worksheet: str) -> list[list[str]]:
+    def _read_sync(self, worksheet: str | None) -> list[list[str]]:
         # Quote the title so names with spaces ("War Stats") are a valid A1 range.
-        title = worksheet.replace("'", "''")
-        response = self._open().values_get(f"'{title}'")
+        # A range without a sheet name refers to the first tab.
+        rng = "A:ZZ" if worksheet is None else "'" + worksheet.replace("'", "''") + "'"
+        response = self._open().values_get(rng)
         # The API drops trailing empty cells; pad every row to the same width,
         # matching what Worksheet.get_all_values() returned before.
         return fill_gaps(response.get("values", []))
 
-    async def get_values(self, worksheet: str) -> list[list[str]]:
-        """All cell values of a worksheet as strings, header row included."""
+    async def get_values(self, worksheet: str | None = None) -> list[list[str]]:
+        """All cell values of a worksheet as strings, header row included.
+        With no name, reads the spreadsheet's first tab."""
         return await asyncio.to_thread(self._read_sync, worksheet)

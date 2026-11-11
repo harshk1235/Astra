@@ -10,7 +10,7 @@ import os
 import asyncpg
 import pytest
 
-from astra.db import run_migrations
+from astra.db import MIGRATIONS_DIR, run_migrations
 from astra.db.donations import DonationRow, DonationsRepository
 from astra.db.roster import RosterRepository
 
@@ -42,7 +42,7 @@ PLAYER_TAGS = [
 def test_migrations_are_idempotent():
     async def t(pool):
         assert await run_migrations(pool) == []   # second run applies nothing
-        assert await pool.fetchval("SELECT count(*) FROM schema_migrations") == 1
+        assert await pool.fetchval("SELECT count(*) FROM schema_migrations") == len(list(MIGRATIONS_DIR.glob("*.sql")))
     run_with_db(t)
 
 
@@ -100,4 +100,58 @@ def test_schema_rejects_bad_data():
         await RosterRepository(pool).upsert_clan("#28VUPJRPU", "Phoenix Reborn", "PR")
         with pytest.raises(asyncpg.UniqueViolationError):   # short names are unique
             await RosterRepository(pool).upsert_clan("#2Y0VPJUVJ", "Other", "PR")
+    run_with_db(t)
+
+
+# --- members sheet import -------------------------------------------------------
+# Same layout as the real members sheet; names, IDs and tags are made up.
+HEADER = ["DisplayName", "Username", "ID", "Name", "Tag", "Verified", "Clan", "Clan Tag", "Role"]
+MEMBERS = [
+    HEADER,
+    ["Void | PR", "void", "111", "VoidMain", "#9GJL9VPVJ", "No", "Phoenix Reborn", "#28VUPJRPU", "Co"],
+    ["Void | PR", "void", "111", "VoidAlt", "#G8U9P20VR", "No", "", "", ""],            # alt, in no clan
+    ["Ryuk | PR", "ryuk", "222", "RyukA", "#YQPPVLQU0", "Yes", "Phoenix Reborn", "#28VUPJRPU", "Mem"],
+    ["Ryuk | PR", "ryuk", "222", "RyukB", "#P80P28RY2", "Yes", "Phoenix Reborn", "#28VUPJRPU", "Co"],
+    ["Fen | PR", "fen", "333", "FenDop", "#L9Q8YVVG2", "No", "DawnOfPhoenix", "#2Y0VPJUVJ", "Mem"],
+    ["Suraj | KG", "suraj", "444", "Suraj", "#G2LG29QUY", "Yes", "Kingsguard", "#2J02U8JRC", "Mem"],  # untracked clan
+    ["Bad", "bad", "", "NoId", "#2L2J8V8Y0", "No", "", "", ""],                        # no Discord ID
+    ["Odd | PR", "odd", "555", "OddRole", "#GLLUVL8JP", "No", "Phoenix Reborn", "#28VUPJRPU", "???"],
+]
+
+
+def test_members_sheet_import():
+    async def t(pool):
+        repo = RosterRepository(pool)
+        await repo.upsert_clan("#28VUPJRPU", "Phoenix Reborn", "PR")
+        await repo.upsert_clan("#2Y0VPJUVJ", "DawnOfPhoenix", "DOP")
+
+        r = await repo.import_members_sheet(MEMBERS)
+        assert (r.members_created, r.accounts_upserted, r.memberships_upserted) == (5, 7, 3)
+        assert any("Discord ID" in s for s in r.skipped_rows)
+        assert any("unknown role" in s for s in r.skipped_rows)
+
+        ranks = {(x["display_name"], x["clan_tag"]): x["rank"] for x in await pool.fetch(
+            "SELECT m.display_name, cm.clan_tag, cm.rank::text FROM clan_memberships cm "
+            "JOIN members m ON m.id = cm.member_id")}
+        assert ranks == {
+            ("Void", "#28VUPJRPU"): "co_leader",
+            ("Ryuk", "#28VUPJRPU"): "co_leader",      # highest of Mem + Co
+            ("Fen", "#2Y0VPJUVJ"): "member",
+        }
+        alt = await pool.fetchrow("SELECT a.member_id, a.ingame_clan_tag, m.discord_user_id FROM accounts a "
+                                  "JOIN members m ON m.id = a.member_id WHERE a.tag = '#G8U9P20VR'")
+        assert (alt["ingame_clan_tag"], alt["discord_user_id"]) == (None, 111)   # alt still linked
+        kg = await pool.fetchrow("SELECT ingame_clan_tag, verified FROM accounts WHERE tag = '#G2LG29QUY'")
+        assert (kg["ingame_clan_tag"], kg["verified"]) == ("#2J02U8JRC", True)
+
+        again = await repo.import_members_sheet(MEMBERS)                       # re-run: no duplicates
+        assert again.members_created == 0
+        assert await pool.fetchval("SELECT count(*) FROM members") == 5
+    run_with_db(t)
+
+
+def test_members_sheet_missing_column_is_rejected():
+    async def t(pool):
+        with pytest.raises(ValueError, match="missing columns: Role"):
+            await RosterRepository(pool).import_members_sheet([HEADER[:-1], ["x"] * 8])
     run_with_db(t)
