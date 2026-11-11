@@ -14,7 +14,6 @@ class CWLStats(commands.Cog):
         self.bot = bot
         self.owner_accounts = {}  # owner_name: [account_name, ...]
         self.cwl_data = {}        # account_name: full CWL data row
-        self.sheet_name = self.get_current_cwl_sheet_name()
         
 
     def get_current_cwl_sheet_name(self):
@@ -40,11 +39,14 @@ class CWLStats(commands.Cog):
                     self.owner_accounts[owner].append(name)
                     tag_map[name] = tag
 
-            # Load CWL data
-            cwl_rows = await self.bot.sheets.get_values(self.sheet_name)
+            # Load CWL data. Work out the month's sheet on every call: computing it
+            # once at startup kept reading last month's sheet until a restart.
+            cwl_rows = await self.bot.sheets.get_values(self.get_current_cwl_sheet_name())
             headers = cwl_rows[0]
             data = cwl_rows[1:]
 
+            # Start fresh each load, so accounts removed from the sheet don't linger.
+            self.cwl_data = {}
             for row in data:
                 if row and row[0] in tag_map:  # account name matched
                     self.cwl_data[row[0]] = row
@@ -175,7 +177,8 @@ class CWLDropdown(Select):
         account_data = [cog.cwl_data.get(acc) for acc in accounts if acc in cog.cwl_data]
 
         if not account_data:
-            return await interaction.followup.send("No CWL data found for that owner.", ephemeral=True)
+            # followup.send only works after a response; nothing has responded yet.
+            return await interaction.response.send_message("No CWL data found for that owner.", ephemeral=True)
 
         # Step 3: Build and show detailed view
         detail_view = CWLDetailView(bot=cog.bot, owner_name=selected_owner, accounts_data=account_data, ctx=self.ctx, back_embed=parent_view.pages[parent_view.current], back_view=parent_view)
