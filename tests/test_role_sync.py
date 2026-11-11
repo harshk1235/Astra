@@ -28,8 +28,11 @@ class FakeMember:
         self.calls.append(("remove", sorted(r.id for r in roles)))
 
 
+COMMON = 777
+
+
 class FakeGuild:
-    def __init__(self, members, existing_roles=MANAGED | {BOOSTER}):
+    def __init__(self, members, existing_roles=MANAGED | {BOOSTER, COMMON}):
         self.members, self.existing = members, existing_roles
 
     def get_member(self, i):
@@ -39,7 +42,7 @@ class FakeGuild:
         raise discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "Unknown Member")
 
     def get_role(self, i):
-        return SimpleNamespace(id=i) if i in self.existing else None
+        return SimpleNamespace(id=i, name=f"role{i}") if i in self.existing else None
 
 
 def run(coro):
@@ -78,3 +81,15 @@ def test_role_hierarchy_problem_gives_clear_message():
     with pytest.raises(RoleSyncError, match="drag my role"):
         run(sync_member(FakeGuild({7: FakeMember(set(), forbidden=True)}), 7,
                         [Membership(PR, Rank.MEMBER)], ROLE_MAP, MANAGED))
+
+
+def test_common_role_given_with_first_clan_and_removed_with_last():
+    managed = MANAGED | {COMMON}
+    m = FakeMember({BOOSTER})
+    out = run(sync_member(FakeGuild({7: m}), 7, [Membership(PR, Rank.MEMBER)], ROLE_MAP, managed,
+                          common_role_id=COMMON))
+    assert m.calls == [("add", [101, COMMON])]
+    assert sorted(out.added_roles) == ["role101", "role777"]
+    m = FakeMember({101, COMMON, BOOSTER})
+    run(sync_member(FakeGuild({7: m}), 7, [], ROLE_MAP, managed, common_role_id=COMMON))
+    assert m.calls == [("remove", [101, COMMON])]

@@ -150,3 +150,9 @@ def test_sync_is_idempotent():
 
 def test_unknown_clan_is_ignored():
     assert desired_role_ids([Membership("#GONE", M)], ROLE_MAP) == set()
+
+
+def test_common_role_only_with_a_configured_clan():
+    assert desired_role_ids([Membership("#PR", M)], ROLE_MAP, common_role_id=777) == {101, 777}
+    assert desired_role_ids([], ROLE_MAP, common_role_id=777) == set()
+    assert desired_role_ids([Membership("#GONE", M)], ROLE_MAP, common_role_id=777) == set()

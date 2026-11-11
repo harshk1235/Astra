@@ -23,9 +23,17 @@ class RoleSyncError(Exception):
 
 @dataclass(frozen=True)
 class SyncOutcome:
-    found: bool           # False if the user isn't in the server
-    added: int = 0
-    removed: int = 0
+    found: bool                                # False if the user isn't in the server
+    added_roles: tuple[str, ...] = ()          # role names, for the confirmation message
+    removed_roles: tuple[str, ...] = ()
+
+    @property
+    def added(self) -> int:
+        return len(self.added_roles)
+
+    @property
+    def removed(self) -> int:
+        return len(self.removed_roles)
 
 
 async def get_member(guild: discord.Guild, discord_id: int) -> discord.Member | None:
@@ -39,11 +47,12 @@ async def get_member(guild: discord.Guild, discord_id: int) -> discord.Member | 
 
 
 async def sync_member(guild: discord.Guild, discord_id: int, memberships: list[Membership],
-                      role_map: RoleMap, managed: set[int], *, reason: str = "Astra role sync") -> SyncOutcome:
+                      role_map: RoleMap, managed: set[int], *, common_role_id: int | None = None,
+                      reason: str = "Astra role sync") -> SyncOutcome:
     member = await get_member(guild, discord_id)
     if member is None:
         return SyncOutcome(found=False)
-    desired = desired_role_ids(memberships, role_map)
+    desired = desired_role_ids(memberships, role_map, common_role_id)
     to_add, to_remove = role_diff(desired, {r.id for r in member.roles}, managed)
     add = [r for r in (guild.get_role(i) for i in to_add) if r is not None]       # skip deleted roles
     remove = [r for r in (guild.get_role(i) for i in to_remove) if r is not None]
@@ -57,4 +66,4 @@ async def sync_member(guild: discord.Guild, discord_id: int, memberships: list[M
             "I'm not allowed to change some of these roles. In Server Settings → Roles, drag my role "
             "above every clan role, and make sure I have the Manage Roles permission."
         )
-    return SyncOutcome(True, len(add), len(remove))
+    return SyncOutcome(True, tuple(r.name for r in add), tuple(r.name for r in remove))

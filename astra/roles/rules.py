@@ -101,7 +101,8 @@ def managed_role_ids(role_map: RoleMap) -> set[int]:
     return {role_id for ranks in role_map.values() for role_id in ranks.values()}
 
 
-def desired_role_ids(memberships: list[Membership], role_map: RoleMap) -> set[int]:
+def desired_role_ids(memberships: list[Membership], role_map: RoleMap,
+                     common_role_id: int | None = None) -> set[int]:
     """Roles a person should have, from all their active clan memberships.
 
     Roles stack: a PR Co-leader gets PR Member + PR Elder + PR Co-leader;
@@ -116,6 +117,10 @@ def desired_role_ids(memberships: list[Membership], role_map: RoleMap) -> set[in
         for rank, role_id in clan_roles.items():
             if rank <= m.rank:
                 desired.add(role_id)
+    # The common family role (e.g. "[ArIX] Member"): anyone in at least one
+    # tracked clan that has roles configured.
+    if common_role_id is not None and any(m.clan_tag in role_map for m in memberships):
+        desired.add(common_role_id)
     return desired
 
 

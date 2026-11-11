@@ -97,6 +97,18 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
         await interaction.response.send_message(msg + " Run `/refreshroles` to apply it to everyone.",
                                                 allowed_mentions=discord.AllowedMentions.none())
 
+    @app_commands.command(name="commonrole", description="Role every member of any tracked clan gets")
+    @app_commands.describe(role="e.g. a [ArIX] Member role. Leave empty to stop giving one.")
+    async def commonrole(self, interaction: discord.Interaction, role: discord.Role | None = None):
+        repo = await self._ready(interaction)
+        if repo is None:
+            return
+        await repo.set_setting("common_role_id", str(role.id) if role else None)
+        msg = (f"✅ Everyone in a tracked clan now gets {role.mention}." if role
+               else "✅ No common role any more.")
+        await interaction.response.send_message(msg + " Run `/refreshroles` to apply it to everyone.",
+                                                allowed_mentions=discord.AllowedMentions.none())
+
     @app_commands.command(name="list", description="Show tracked clans and their roles")
     async def list_(self, interaction: discord.Interaction):
         repo = await self._ready(interaction)
@@ -112,6 +124,8 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
             lines.append(f"**{c.alias}** · {c.name} `{c.tag}`\n"
                          f"Member {fmt(Rank.MEMBER)} · Elder {fmt(Rank.ELDER)} · "
                          f"Co-leader {fmt(Rank.CO_LEADER)} · Leader {fmt(Rank.LEADER)}")
+        common = await repo.common_role_id()
+        lines.append(f"Common role for everyone: {f'<@&{common}>' if common else '*not set* (`/clan commonrole`)'}")
         await interaction.response.send_message(
             embed=discord.Embed(title="Tracked clans", description="\n\n".join(lines), color=0x000000),
             allowed_mentions=discord.AllowedMentions.none())

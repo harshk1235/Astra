@@ -114,9 +114,29 @@ class MembershipRepository:
         return result
 
     async def all_managed_role_ids(self) -> set[int]:
-        """Every role the bot manages, including those of deactivated clans, so a
-        removed clan's roles get taken away on the next refresh."""
-        return {r["discord_role_id"] for r in await self._pool.fetch("SELECT discord_role_id FROM clan_roles")}
+        """Every role the bot manages, including those of deactivated clans (so a
+        removed clan's roles get taken away on the next refresh) and the common role."""
+        ids = {r["discord_role_id"] for r in await self._pool.fetch("SELECT discord_role_id FROM clan_roles")}
+        common = await self.common_role_id()
+        return ids | ({common} if common else set())
+
+    # --- bot-wide settings -----------------------------------------------------
+
+    async def get_setting(self, key: str) -> str | None:
+        return await self._pool.fetchval("SELECT value FROM bot_settings WHERE key = $1", key)
+
+    async def set_setting(self, key: str, value: str | None) -> None:
+        if value is None:
+            await self._pool.execute("DELETE FROM bot_settings WHERE key = $1", key)
+        else:
+            await self._pool.execute(
+                """INSERT INTO bot_settings (key, value) VALUES ($1, $2)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", key, value)
+
+    async def common_role_id(self) -> int | None:
+        """The role everyone in any tracked clan gets (like "[ArIX] Member")."""
+        value = await self.get_setting("common_role_id")
+        return int(value) if value else None
 
     # --- people and accounts ---------------------------------------------------
 
