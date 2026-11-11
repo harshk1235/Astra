@@ -1,8 +1,11 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+import logging
 
 from astra.timing import timed
+
+log = logging.getLogger(__name__)
 
 
 class Donations(commands.Cog):
@@ -23,6 +26,11 @@ class Donations(commands.Cog):
         await self.send_donos_embed(interaction)
 
     async def send_donos_embed(self, source):
+        is_slash = isinstance(source, discord.Interaction)
+        if is_slash:
+            # Discord fails a slash command that gets no response within 3 seconds.
+            # The sheet read can take longer, so acknowledge first and reply after.
+            await source.response.defer()
         try:
             with timed("donos.load"):
                 data = (await self.bot.sheets.get_values("Donations"))[1:]  # skip header row
@@ -45,17 +53,17 @@ class Donations(commands.Cog):
                 icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png?ex=68500f97&is=684ebe17&hm=8dde095ff75caa82b9e8a2ded1b35682220e8a47ba0cf3026c64f491b89ea8d3&=&format=webp&quality=lossless"
             )
 
-            if isinstance(source, commands.Context):
+            if is_slash:
+                await source.followup.send(embed=embed)
+            else:
                 await source.send(embed=embed)
-            else:
-                await source.response.send_message(embed=embed)
 
-        except Exception as e:
-            print(e)
-            if isinstance(source, commands.Context):
-                await source.send("Failed to fetch donation stats.")
+        except Exception:
+            log.exception("Failed to build donation leaderboard")
+            if is_slash:
+                await source.followup.send("Failed to fetch donation stats.")
             else:
-                await source.response.send_message("Failed to fetch donation stats.")
+                await source.send("Failed to fetch donation stats.")
 
 async def setup(bot):
     cog = Donations(bot)
