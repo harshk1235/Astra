@@ -31,6 +31,9 @@ class Settings:
     guild_id: int
     google_credentials_json: str
     google_sheet_url: str
+    # Optional while cogs still read Sheets; required once they read Postgres.
+    database_url: str | None = None
+    clashking_base_url: str = "https://api.clashk.ing"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -53,4 +56,6 @@ class Settings:
             guild_id=int(guild_id),
             google_credentials_json=_require("CREDENTIALS_JSON"),
             google_sheet_url=sheet_url,
+            database_url=os.environ.get("DATABASE_URL", "").strip() or None,
+            clashking_base_url=os.environ.get("CLASHKING_BASE_URL", "").strip() or "https://api.clashk.ing",
         )

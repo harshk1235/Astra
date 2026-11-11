@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 
 from astra.config import Settings
+from astra.db import create_pool, run_migrations
 from astra.sheets import SheetsClient
 
 log = logging.getLogger("astra")
@@ -20,8 +21,18 @@ class Astra(commands.Bot):
         self.settings = settings  # cogs read config from here
         # One Sheets client shared by all cogs (no network call happens here).
         self.sheets = SheetsClient(settings.google_credentials_json, settings.google_sheet_url)
+        self.db = None  # asyncpg pool, set in setup_hook when DATABASE_URL is configured
 
     async def setup_hook(self) -> None:
+        if self.settings.database_url:
+            # Fail fast: if the database is unreachable, crash at startup
+            # (Docker restarts us) rather than fail on the first command.
+            self.db = await create_pool(self.settings.database_url)
+            applied = await run_migrations(self.db)
+            log.info("Database ready (%d new migration(s) applied)", len(applied))
+        else:
+            log.warning("DATABASE_URL not set; running in Sheets-only mode")
+
         # Runs once, before connecting. on_ready can fire again after every
         # reconnect, which used to re-load cogs (ExtensionAlreadyLoaded errors)
         # and re-sync slash commands each time.
@@ -43,6 +54,11 @@ class Astra(commands.Bot):
             log.info("Synced %d slash command(s) to guild %s", len(synced), self.settings.guild_id)
         except Exception:
             log.exception("Slash command sync failed")
+
+    async def close(self) -> None:
+        await super().close()
+        if self.db is not None:
+            await self.db.close()
 
     async def on_ready(self) -> None:
         log.info("%s is online.", self.user)
