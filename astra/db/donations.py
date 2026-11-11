@@ -26,14 +26,18 @@ class DonationsRepository:
 
     async def upsert_season(self, season: str, rows: list[DonationRow]) -> None:
         """Write one season's numbers for many accounts in a single round trip.
-        Upsert: running the job twice updates rows instead of duplicating them."""
+        Upsert: running the job twice updates rows instead of duplicating them.
+        A month's totals only ever grow, so keep the larger value: a reading
+        from a narrower window can't shrink what we already recorded."""
         if not rows:
             return
         await self._pool.executemany(
             """INSERT INTO donation_snapshots (account_tag, season, donated, received)
                VALUES ($1, $2, $3, $4)
                ON CONFLICT (account_tag, season) DO UPDATE
-               SET donated = EXCLUDED.donated, received = EXCLUDED.received, fetched_at = now()""",
+               SET donated  = GREATEST(donation_snapshots.donated,  EXCLUDED.donated),
+                   received = GREATEST(donation_snapshots.received, EXCLUDED.received),
+                   fetched_at = now()""",
             [(r.account_tag, season, r.donated, r.received) for r in rows],
         )
 
