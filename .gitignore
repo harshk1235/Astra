@@ -1,24 +1,26 @@
 # Python
 __pycache__/
 *.py[cod]
-*.env
-.env
+.pytest_cache/
 
-# Virtual Environment
+# Virtual environments
 venv/
-.env/
 .venv/
 
-# VS Code
-.vscode/
-
-# Credentials & Config
+# Secrets and local config: never commit these.
+# Real values go in .env (copy .env.example). emoji.json and test
+# fixtures are deliberately NOT ignored.
+.env
+*.env
+!.env.example
 config.json
-*.json
+credentials*.json
+service-account*.json
 *.pem
 *.key
-credentials.json
 
-# System files
+# Editors / OS
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
