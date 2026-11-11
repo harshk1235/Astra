@@ -1,0 +1,36 @@
+{
+ "items": [
+  {
+   "eventTime": "2026-11-09T21:15:09.057Z",
+   "clanTag": "#28VUPJRPU",
+   "statType": "received",
+   "previousValue": 530,
+   "currentValue": 619,
+   "delta": 89
+  },
+  {
+   "eventTime": "2026-11-08T11:44:13.818Z",
+   "clanTag": "#28VUPJRPU",
+   "statType": "received",
+   "previousValue": 442,
+   "currentValue": 530,
+   "delta": 88
+  },
+  {
+   "eventTime": "2026-11-07T14:59:22.779Z",
+   "clanTag": "#28VUPJRPU",
+   "statType": "received",
+   "previousValue": 353,
+   "currentValue": 442,
+   "delta": 89
+  },
+  {
+   "eventTime": "2026-11-07T01:32:01.805Z",
+   "clanTag": "#28VUPJRPU",
+   "statType": "received",
+   "previousValue": 264,
+   "currentValue": 353,
+   "delta": 89
+  }
+ ]
+}

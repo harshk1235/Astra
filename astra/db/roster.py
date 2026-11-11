@@ -42,6 +42,10 @@ class RosterRepository:
             normalize_tag(tag), name, short_name,
         )
 
+    async def list_tracked_clan_tags(self) -> set[str]:
+        """Clans the bot tracks (PR, DOP): memberships, roles and donations count only here."""
+        return {r["tag"] for r in await self._pool.fetch("SELECT tag FROM clans WHERE active")}
+
     async def list_account_tags(self) -> list[str]:
         """Accounts owned by a known person: the set the fetchers track."""
         rows = await self._pool.fetch(

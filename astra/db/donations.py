@@ -27,8 +27,9 @@ class DonationsRepository:
     async def upsert_season(self, season: str, rows: list[DonationRow]) -> None:
         """Write one season's numbers for many accounts in a single round trip.
         Upsert: running the job twice updates rows instead of duplicating them.
-        A month's totals only ever grow, so keep the larger value: a reading
-        from a narrower window can't shrink what we already recorded."""
+        A month's totals only ever grow, so keep the larger value: a run that
+        got an incomplete answer from the API can't shrink what we already
+        recorded."""
         if not rows:
             return
         await self._pool.executemany(
