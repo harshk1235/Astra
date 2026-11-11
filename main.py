@@ -4,6 +4,7 @@ import os
 import discord
 from discord.ext import commands
 
+from astra.clashking import ClashKingClient
 from astra.config import Settings
 from astra.db import create_pool, run_migrations
 from astra.sheets import SheetsClient
@@ -26,6 +27,7 @@ class Astra(commands.Bot):
             writable=bool(settings.database_url and settings.sheets_export),
         )
         self.db = None  # asyncpg pool, set in setup_hook when DATABASE_URL is configured
+        self.clashking: ClashKingClient | None = None   # shared by jobs and leader commands
 
     async def setup_hook(self) -> None:
         if self.settings.database_url:
@@ -34,6 +36,8 @@ class Astra(commands.Bot):
             self.db = await create_pool(self.settings.database_url)
             applied = await run_migrations(self.db)
             log.info("Database ready (%d new migration(s) applied)", len(applied))
+            self.clashking = ClashKingClient(self.settings.clashking_base_url)
+            await self.clashking.__aenter__()
         else:
             log.warning("DATABASE_URL not set; running in Sheets-only mode")
 
@@ -61,6 +65,8 @@ class Astra(commands.Bot):
 
     async def close(self) -> None:
         await super().close()
+        if self.clashking is not None:
+            await self.clashking.close()
         if self.db is not None:
             await self.db.close()
 

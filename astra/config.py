@@ -40,6 +40,8 @@ class Settings:
     data_retention_months: int = 2
     # ...but never anything before this month (YYYY-MM).
     data_start_month: str = "2026-10"
+    # Optional channel where every leader action (joined, promoted, ...) is posted.
+    log_channel_id: int | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -67,4 +69,5 @@ class Settings:
             sheets_export=os.environ.get("SHEETS_EXPORT", "true").strip().lower() not in ("0", "false", "no", "off"),
             data_retention_months=int(os.environ.get("DATA_RETENTION_MONTHS", "2")),
             data_start_month=os.environ.get("DATA_START_MONTH", "").strip() or "2026-10",
+            log_channel_id=int(os.environ["LOG_CHANNEL_ID"]) if os.environ.get("LOG_CHANNEL_ID", "").strip().isdigit() else None,
         )

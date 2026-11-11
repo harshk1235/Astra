@@ -11,15 +11,16 @@ from datetime import datetime, timezone
 
 from discord.ext import commands, tasks
 
-from astra.clashking import ClashKingClient
 from astra.db.donations import DonationsRepository
 from astra.db.jobs import JobRunsRepository
+from astra.db.membership import MembershipRepository
 from astra.db.roster import RosterRepository
 from astra.db.wars import WarsRepository
 from astra.db.retention import delete_before
 from astra.exports import export_cwl, export_donations, export_war_stats
 from astra.months import retention_cutoff
 from astra.jobs.donations import run_donations_job
+from astra.jobs.roster import sync_roster
 from astra.jobs.wars import run_wars_job
 
 log = logging.getLogger(__name__)
@@ -28,24 +29,25 @@ log = logging.getLogger(__name__)
 class Jobs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.client: ClashKingClient | None = None
+
+    @property
+    def client(self):
+        return self.bot.clashking   # shared with the leader commands
 
     async def cog_load(self):
         if self.bot.db is None:
             log.info("No database configured; scheduled jobs are disabled")
             return
-        self.client = ClashKingClient(self.bot.settings.clashking_base_url)
-        await self.client.__aenter__()
+        self.roster_loop.start()
         self.donations_loop.start()
         self.wars_loop.start()
         self.cleanup_loop.start()
 
     async def cog_unload(self):
+        self.roster_loop.cancel()
         self.donations_loop.cancel()
         self.wars_loop.cancel()
         self.cleanup_loop.cancel()
-        if self.client is not None:
-            await self.client.close()
 
     async def _export(self, name: str, export, repo) -> None:
         if not self.bot.settings.sheets_export:
@@ -62,6 +64,15 @@ class Jobs(commands.Cog):
             await jobs.finish(run_id, "failed", items_ok=0, items_failed=1, error=repr(e)[:500])
 
     # One bad run must never kill a loop: log it (it's also in job_runs) and retry next hour.
+
+    @tasks.loop(minutes=60)
+    async def roster_loop(self):
+        """Keep linked accounts' names, TH and in-game clan current."""
+        try:
+            seen, left = await sync_roster(self.client, MembershipRepository(self.bot.db))
+            log.info("roster: %d accounts in tracked clans, %d linked accounts left one", seen, left)
+        except Exception:
+            log.exception("roster sync crashed")
 
     @tasks.loop(minutes=60)
     async def donations_loop(self):
