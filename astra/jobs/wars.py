@@ -19,7 +19,8 @@ from typing import Any
 from astra.db.jobs import JobRunsRepository
 from astra.db.roster import RosterRepository
 from astra.db.wars import AttackRecord, WarRecord, WarsRepository
-from astra.jobs.donations import JobResult, JsonClient, month_start
+from astra.jobs.donations import JobResult, JsonClient
+from astra.months import month_start
 from astra.tags import normalize_tag, url_tag
 
 log = logging.getLogger(__name__)

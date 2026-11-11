@@ -36,6 +36,10 @@ class Settings:
     clashking_base_url: str = "https://api.clashk.ing"
     # Write leaderboards back to GOOGLE_SHEET_URL after each job (needs Editor access).
     sheets_export: bool = True
+    # Keep the current month plus this many months before it...
+    data_retention_months: int = 2
+    # ...but never anything before this month (YYYY-MM).
+    data_start_month: str = "2026-10"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -61,4 +65,6 @@ class Settings:
             database_url=os.environ.get("DATABASE_URL", "").strip() or None,
             clashking_base_url=os.environ.get("CLASHKING_BASE_URL", "").strip() or "https://api.clashk.ing",
             sheets_export=os.environ.get("SHEETS_EXPORT", "true").strip().lower() not in ("0", "false", "no", "off"),
+            data_retention_months=int(os.environ.get("DATA_RETENTION_MONTHS", "2")),
+            data_start_month=os.environ.get("DATA_START_MONTH", "").strip() or "2026-10",
         )

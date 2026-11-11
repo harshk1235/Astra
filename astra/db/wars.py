@@ -121,3 +121,102 @@ class WarsRepository:
         )
         return [WarStatsEntry(r["tag"], r["name"], r["th"], r["attacks"], r["triples"],
                               r["hit_rate"], r["destruction"]) for r in rows]
+
+    async def cwl_stats(self, start: datetime, end: datetime) -> list["CwlEntry"]:
+        """CWL leaderboard for the CWL that starts in [start, end)."""
+        return await cwl_stats(self._pool, start, end)
+
+
+# --- CWL ---------------------------------------------------------------------
+
+CWL_DAYS = 7
+
+
+@dataclass(frozen=True)
+class CwlAttack:
+    tag: str
+    name: str
+    owner: str
+    clan: str
+    day: int
+    attacker_th: int
+    defender_th: int | None
+    stars: int
+    destruction: float
+
+
+@dataclass
+class CwlEntry:
+    tag: str
+    name: str
+    owner: str
+    clan: str
+    th: int
+    days: dict[int, tuple[int, float]]   # day -> (stars, destruction %)
+    dips: int = 0                        # attacks on a lower TH
+    reaches: int = 0                     # attacks on a higher TH
+
+    @property
+    def hits(self) -> int:
+        return len(self.days)
+
+    @property
+    def triples(self) -> int:
+        return sum(1 for stars, _ in self.days.values() if stars == 3)
+
+    @property
+    def stars(self) -> int:
+        return sum(stars for stars, _ in self.days.values())
+
+
+def build_cwl_entries(attacks: list[CwlAttack]) -> list[CwlEntry]:
+    """Group attacks by account. Each attack goes under its round's day, so a
+    missed Day 2 stays empty instead of shifting Day 3 into its place (the
+    bug in the old script, which filled days in the order attacks came in).
+    Sorted like the old sheet: TH, then triples, then stars (descending)."""
+    entries: dict[str, CwlEntry] = {}
+    for a in sorted(attacks, key=lambda a: (a.tag, a.day)):
+        if not 1 <= a.day <= CWL_DAYS:
+            continue
+        e = entries.get(a.tag)
+        if e is None:
+            e = entries[a.tag] = CwlEntry(a.tag, a.name, a.owner, a.clan, a.attacker_th, {})
+        e.th = a.attacker_th                  # latest round wins (sorted by day)
+        if a.day in e.days:
+            continue                          # one attack per round in CWL
+        e.days[a.day] = (a.stars, a.destruction)
+        if a.defender_th is not None:
+            if a.attacker_th > a.defender_th:
+                e.dips += 1
+            elif a.attacker_th < a.defender_th:
+                e.reaches += 1
+    return sorted(entries.values(), key=lambda e: (-e.th, -e.triples, -e.stars, e.name.lower()))
+
+
+async def _cwl_attacks(pool: asyncpg.Pool, start: datetime, end: datetime) -> list[CwlAttack]:
+    """Our linked accounts' attacks in CWL rounds that start in [start, end).
+    Day = whole days since the clan's first round that month, plus one, so a
+    round missing from the API can't shift later days either."""
+    rows = await pool.fetch(
+        """WITH rounds AS (
+               SELECT w.id, c.name AS clan,
+                      1 + round(extract(epoch FROM w.start_time
+                                - min(w.start_time) OVER (PARTITION BY w.clan_tag)) / 86400)::int AS day
+               FROM wars w
+               JOIN clans c ON c.tag = w.clan_tag
+               WHERE w.war_type = 'cwl' AND w.start_time >= $1 AND w.start_time < $2
+           )
+           SELECT a.attacker_tag AS tag, acc.name, m.display_name AS owner, r.clan, r.day,
+                  a.attacker_th, a.defender_th, a.stars, a.destruction
+           FROM war_attacks a
+           JOIN rounds r     ON r.id = a.war_id
+           JOIN accounts acc ON acc.tag = a.attacker_tag
+           JOIN members m    ON m.id = acc.member_id""",
+        start, end,
+    )
+    return [CwlAttack(r["tag"], r["name"], r["owner"], r["clan"], r["day"], r["attacker_th"],
+                      r["defender_th"], r["stars"], float(r["destruction"])) for r in rows]
+
+
+async def cwl_stats(pool: asyncpg.Pool, start: datetime, end: datetime) -> list[CwlEntry]:
+    return build_cwl_entries(await _cwl_attacks(pool, start, end))

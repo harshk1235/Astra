@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from astra.db.donations import DonationsRepository, LeaderboardEntry
-from astra.db.wars import WarsRepository, WarStatsEntry
-from astra.jobs.donations import _next_month_start, month_start, season_key
+from astra.db.wars import CWL_DAYS, CwlEntry, WarsRepository, WarStatsEntry
+from astra.months import cwl_sheet_name, month_key as season_key, month_start, next_month_start
 
 DONATIONS_TAB = "Donations"
 DONATIONS_HEADER = ["Name", "Donated", "Received"]
@@ -20,12 +20,13 @@ WAR_STATS_TAB = "War Stats"
 WAR_STATS_HEADER = ["Player", "TH Level", "Total Attacks", "Total 3 Stars", "Hit Rate (%)", "Total Destruction"]
 
 
+CWL_HEADER = (["Name", "Tag", "Clan", "TH", "Total Hits", "Triples", "Total Stars"]
+              + [h for d in range(1, CWL_DAYS + 1) for h in (f"Day {d} Stars", f"Day {d} %")]
+              + ["Dips", "Reaches"])
+
+
 class SheetWriter(Protocol):
     async def write_rows(self, worksheet: str, rows: list[list]) -> None: ...
-
-
-def next_month_start(now: datetime) -> datetime:
-    return _next_month_start(month_start(now))
 
 
 def _number(x: float) -> float | int:
@@ -42,6 +43,19 @@ def war_stats_rows(entries: list[WarStatsEntry]) -> list[list]:
     ]
 
 
+def cwl_rows(entries: list[CwlEntry]) -> list[list]:
+    """Same 23 columns as the old CWL sheet. A day with no attack is left
+    blank, in its own column, so later days never shift left."""
+    rows = [CWL_HEADER]
+    for e in entries:
+        row = [e.name, e.tag, e.clan, e.th, e.hits, e.triples, e.stars]
+        for d in range(1, CWL_DAYS + 1):
+            stars, pct = e.days.get(d, ("", ""))
+            row += [stars, _number(pct) if pct != "" else ""]
+        rows.append(row + [e.dips, e.reaches])
+    return rows
+
+
 async def export_donations(sheets: SheetWriter, repo: DonationsRepository, now: datetime | None = None) -> int:
     now = now or datetime.now(timezone.utc)
     entries = await repo.leaderboard(season_key(now))
@@ -53,4 +67,12 @@ async def export_war_stats(sheets: SheetWriter, repo: WarsRepository, now: datet
     now = now or datetime.now(timezone.utc)
     entries = await repo.war_stats(month_start(now), next_month_start(now))
     await sheets.write_rows(WAR_STATS_TAB, war_stats_rows(entries))
+    return len(entries)
+
+
+async def export_cwl(sheets: SheetWriter, repo: WarsRepository, now: datetime | None = None) -> int:
+    """Writes the month's 'Cwl <Mon><Year>' tab (created if missing)."""
+    now = now or datetime.now(timezone.utc)
+    entries = await repo.cwl_stats(month_start(now), next_month_start(now))
+    await sheets.write_rows(cwl_sheet_name(now), cwl_rows(entries))
     return len(entries)

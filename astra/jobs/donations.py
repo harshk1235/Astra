@@ -24,6 +24,7 @@ from astra.clashking import ClashKingError
 from astra.db.donations import DonationRow, DonationsRepository
 from astra.db.jobs import JobRunsRepository
 from astra.db.roster import RosterRepository
+from astra.months import month_key, month_start, next_month_start
 from astra.tags import url_tag
 
 log = logging.getLogger(__name__)
@@ -39,17 +40,8 @@ class JsonClient(Protocol):
 
 # --- pure helpers (unit tested without network or database) -----------------
 
-def month_start(now: datetime) -> datetime:
-    now = now.astimezone(timezone.utc)
-    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-
 def season_key(now: datetime) -> str:
-    return month_start(now).strftime("%Y-%m")
-
-
-def _next_month_start(start: datetime) -> datetime:
-    return start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+    return month_key(now)
 
 
 def _iso(dt: datetime) -> str:
@@ -122,7 +114,7 @@ async def run_donations_job(
 
         now = now or datetime.now(timezone.utc)
         start, season = month_start(now), season_key(now)
-        end = _next_month_start(start)
+        end = next_month_start(start)
         clan_tags = await roster.list_tracked_clan_tags()
         if not clan_tags:
             log.warning("donations job: no tracked clans (add one with scripts.seed add-clan)")
