@@ -48,6 +48,10 @@ def season_key(now: datetime) -> str:
     return month_start(now).strftime("%Y-%m")
 
 
+def _next_month_start(start: datetime) -> datetime:
+    return start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+
+
 def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -67,12 +71,15 @@ def sum_events(items: Iterable[dict[str, Any]], clan_tags: set[str]) -> int:
     return total
 
 
-async def fetch_month_events(client: JsonClient, tag: str, stat: str, start: datetime) -> list[dict[str, Any]]:
-    """All `stat` events for `tag` since `start`, following pages as needed."""
+async def fetch_month_events(client: JsonClient, tag: str, stat: str, start: datetime,
+                             end: datetime | None = None) -> list[dict[str, Any]]:
+    """All `stat` events for `tag` in [start, end), following pages as needed.
+    `end` matters when backfilling a past month; for the current month it
+    can be left out."""
     path = f"/v2/player/{url_tag(tag)}/history/stats"
     events: list[dict[str, Any]] = []
     seen: set[tuple] = set()
-    before: str | None = None
+    before: str | None = _iso(end) if end else None
     for _ in range(MAX_PAGES):
         params = {"type": stat, "time[after]": _iso(start), "limit": PAGE_SIZE}
         if before:
@@ -115,6 +122,7 @@ async def run_donations_job(
 
         now = now or datetime.now(timezone.utc)
         start, season = month_start(now), season_key(now)
+        end = _next_month_start(start)
         clan_tags = await roster.list_tracked_clan_tags()
         if not clan_tags:
             log.warning("donations job: no tracked clans (add one with scripts.seed add-clan)")
@@ -126,8 +134,8 @@ async def run_donations_job(
 
         async def fetch_one(tag: str) -> DonationRow:
             donated_events, received_events = await asyncio.gather(
-                fetch_month_events(client, tag, "donated", start),
-                fetch_month_events(client, tag, "received", start),
+                fetch_month_events(client, tag, "donated", start, end),
+                fetch_month_events(client, tag, "received", start, end),
             )
             return DonationRow(tag, sum_events(donated_events, clan_tags), sum_events(received_events, clan_tags))
 

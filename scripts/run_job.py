@@ -4,7 +4,7 @@
     python -m scripts.run_job wars                 fetch regular wars, print war stats
     python -m scripts.run_job show                 print both leaderboards from Postgres only
     python -m scripts.run_job export               write both leaderboards to the Google Sheet
-    add --month 2026-10 to show/export a past month
+    add --month 2026-10 to fetch, show or export a past month (backfill)
 
 With Docker:  docker compose run --rm bot python -m scripts.run_job donations
 """
@@ -47,7 +47,7 @@ async def print_wars(repo: WarsRepository, now: datetime) -> None:
 async def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m scripts.run_job")
     parser.add_argument("job", choices=["donations", "wars", "show", "export"])
-    parser.add_argument("--month", help="YYYY-MM for show/export (default: current month)")
+    parser.add_argument("--month", help="YYYY-MM to fetch/show/export (default: current month)")
     args = parser.parse_args()
 
     now = datetime.now(timezone.utc)
@@ -66,9 +66,9 @@ async def main() -> None:
         if args.job in ("donations", "wars"):
             async with ClashKingClient(settings.clashking_base_url) as client:
                 if args.job == "donations":
-                    result = await run_donations_job(client, roster, donations, jobs)
+                    result = await run_donations_job(client, roster, donations, jobs, now=now)
                 else:
-                    result = await run_wars_job(client, roster, wars, jobs)
+                    result = await run_wars_job(client, roster, wars, jobs, now=now)
             print(f"Job {result.status}: {result.items_ok} ok, {result.items_failed} failed")
 
         if args.job in ("donations", "show"):

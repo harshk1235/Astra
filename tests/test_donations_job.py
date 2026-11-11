@@ -72,7 +72,17 @@ def test_fetch_follows_pages(monkeypatch):
     got = asyncio.run(fetch_month_events(client, PR, "donated", month_start(NOW)))
     assert len(got) == 8 and len(client.calls) == 3          # 3 + 3 + 2
     assert client.calls[0]["time[after]"] == "2026-11-01T00:00:00Z"
+    assert "time[before]" not in client.calls[0]                # current month: no upper bound
     assert "time[before]" in client.calls[1]
+
+
+def test_backfill_stops_at_month_end():
+    events = [ev(PR, 5, "2026-10-20T10:00:00.000Z"), ev(PR, 7, "2026-11-03T10:00:00.000Z")]
+    client = PagingClient(events)
+    oct_start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    got = asyncio.run(fetch_month_events(client, PR, "donated", oct_start, datetime(2026, 11, 1, tzinfo=timezone.utc)))
+    assert [e["delta"] for e in got] == [5]                     # November's donation not counted for October
+    assert client.calls[0]["time[before]"] == "2026-11-01T00:00:00Z"
 
 
 def test_fetch_gives_up_on_runaway_paging(monkeypatch):

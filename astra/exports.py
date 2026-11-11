@@ -12,7 +12,7 @@ from typing import Protocol
 
 from astra.db.donations import DonationsRepository, LeaderboardEntry
 from astra.db.wars import WarsRepository, WarStatsEntry
-from astra.jobs.donations import month_start, season_key
+from astra.jobs.donations import _next_month_start, month_start, season_key
 
 DONATIONS_TAB = "Donations"
 DONATIONS_HEADER = ["Name", "Donated", "Received"]
@@ -25,8 +25,7 @@ class SheetWriter(Protocol):
 
 
 def next_month_start(now: datetime) -> datetime:
-    start = month_start(now)
-    return start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+    return _next_month_start(month_start(now))
 
 
 def _number(x: float) -> float | int:

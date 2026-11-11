@@ -42,12 +42,14 @@ class Jobs(commands.Cog):
 
     async def _export(self, name: str, export, repo) -> None:
         if not self.bot.settings.sheets_export:
+            log.info("export:%s skipped (SHEETS_EXPORT=false)", name)
             return
         jobs = JobRunsRepository(self.bot.db)
         run_id = await jobs.start(f"export:{name}")
         try:
             rows = await export(self.bot.sheets, repo)
             await jobs.finish(run_id, "ok", items_ok=rows, items_failed=0)
+            log.info("export:%s ok: %d rows written to the sheet", name, rows)
         except Exception as e:
             log.exception("export:%s failed", name)
             await jobs.finish(run_id, "failed", items_ok=0, items_failed=1, error=repr(e)[:500])
