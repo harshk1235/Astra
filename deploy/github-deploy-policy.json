@@ -6,8 +6,8 @@
       "Effect": "Allow",
       "Action": "ssm:SendCommand",
       "Resource": [
-        "arn:aws:ec2:ap-south-1:ACCOUNT_ID:instance/INSTANCE_ID",
-        "arn:aws:ssm:ap-south-1:ACCOUNT_ID:document/AstraDeploy"
+        "arn:aws:ec2:ap-southeast-2:ACCOUNT_ID:instance/INSTANCE_ID",
+        "arn:aws:ssm:ap-southeast-2:ACCOUNT_ID:document/AstraDeploy"
       ]
     },
     {

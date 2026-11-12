@@ -26,7 +26,7 @@ so even a leaked key can do nothing but redeploy code that is already on `main`.
 
 ## 2. Create the deploy command (`AstraDeploy`)
 
-Make sure the console's region (top right) is **Asia Pacific (Mumbai) ap-south-1**.
+Make sure the console's region (top right) is **Asia Pacific (Sydney) ap-southeast-2** (the Free plan only allows this one).
 
 1. Systems Manager → **Documents** (left menu, under *Shared resources*) → **Create document → Command or Session**.
 2. Name: `AstraDeploy` (exactly). Target type: leave empty. Document type: **Command document**.
@@ -59,7 +59,7 @@ Repository → **Settings → Secrets and variables → Actions → New reposito
 
 Then the **Variables** tab → **New repository variable**: `DEPLOY_ENABLED` = `true`.
 Until it's set, the deploy job is skipped (tests and the Docker build still run).
-Optionally also `AWS_REGION` if the server isn't in `ap-south-1`.
+Optionally also `AWS_REGION` if the server isn't in `ap-southeast-2`.
 
 ## Check it
 
