@@ -1,19 +1,33 @@
-"""Postgres -> Google Sheets exports, in the exact layouts the old Apps
-Scripts produced. Leaders keep their familiar tabs, and any bot still reading
-Sheets (e.g. the version on main) keeps working.
+"""Postgres -> Google Sheets exports.
 
-Sheets is only a view now: Postgres is the source of truth, and an export
-can be re-run at any time to rebuild a tab.
+The sheet is only a view now: Postgres is the source of truth, and every tab
+can be rebuilt at any time. It has five fixed tabs, all for the current month
+except Members:
+
+    Members    the roster: owner, Discord ID, ranks, every linked account
+    All Data   one row per account with every number (see astra.alldata)
+    Donations  per person, like the old Donations sheet
+    War Stats  regular wars, like the old War Stats sheet
+    CWL        this month's CWL, day by day
+
+Older months are in Discord (/donos, /warstats, /cwlstats, /export with a
+month option), so the sheet no longer grows a new tab every month.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Protocol
 
+import asyncpg
+
+from astra.alldata import all_data_rows, members_rows
 from astra.db.donations import DonationsRepository, LeaderboardEntry
 from astra.db.wars import CWL_DAYS, CwlEntry, WarsRepository, WarStatsEntry
-from astra.months import cwl_sheet_name, month_key as season_key, month_start, next_month_start
+from astra.months import month_key as season_key, month_start, next_month_start
 
+MEMBERS_TAB = "Members"
+ALL_DATA_TAB = "All Data"
+CWL_TAB = "CWL"
 DONATIONS_TAB = "Donations"
 DONATIONS_HEADER = ["Name", "Donated", "Received"]
 WAR_STATS_TAB = "War Stats"
@@ -22,6 +36,9 @@ WAR_STATS_HEADER = ["Player", "TH Level", "Total Attacks", "Total 3 Stars", "Hit
 
 CWL_HEADER = (["Name", "Tag", "Clan", "TH", "Total Hits", "Triples", "Total Stars"]
               + [h for d in range(1, CWL_DAYS + 1) for h in (f"Day {d} Stars", f"Day {d} %")])
+
+
+SHEET_TABS = [MEMBERS_TAB, ALL_DATA_TAB, DONATIONS_TAB, "War Stats", CWL_TAB]   # in display order
 
 
 class SheetWriter(Protocol):
@@ -71,8 +88,39 @@ async def export_war_stats(sheets: SheetWriter, repo: WarsRepository, now: datet
 
 
 async def export_cwl(sheets: SheetWriter, repo: WarsRepository, now: datetime | None = None) -> int:
-    """Writes the month's 'Cwl <Mon><Year>' tab (created if missing)."""
     now = now or datetime.now(timezone.utc)
     entries = await repo.cwl_stats(month_start(now), next_month_start(now))
-    await sheets.write_rows(cwl_sheet_name(now), cwl_rows(entries))
+    await sheets.write_rows(CWL_TAB, cwl_rows(entries))
     return len(entries)
+
+
+async def export_members(sheets: SheetWriter, pool: asyncpg.Pool) -> int:
+    rows = await members_rows(pool)
+    await sheets.write_rows(MEMBERS_TAB, rows)
+    return len(rows) - 1
+
+
+async def export_all_data(sheets: SheetWriter, pool: asyncpg.Pool, now: datetime | None = None) -> int:
+    rows = await all_data_rows(pool, month_start(now or datetime.now(timezone.utc)))
+    await sheets.write_rows(ALL_DATA_TAB, rows)
+    return len(rows) - 1
+
+
+async def export_everything(sheets: SheetWriter, pool: asyncpg.Pool, now: datetime | None = None) -> dict[str, int]:
+    """Write all five tabs. Returns rows written per tab."""
+    wars = WarsRepository(pool)
+    return {
+        MEMBERS_TAB: await export_members(sheets, pool),
+        ALL_DATA_TAB: await export_all_data(sheets, pool, now),
+        DONATIONS_TAB: await export_donations(sheets, DonationsRepository(pool), now),
+        WAR_STATS_TAB: await export_war_stats(sheets, wars, now),
+        CWL_TAB: await export_cwl(sheets, wars, now),
+    }
+
+
+async def rebuild_sheet(sheets, pool: asyncpg.Pool, now: datetime | None = None) -> tuple[dict[str, int], list[str]]:
+    """Write the five tabs, then delete every other tab (old monthly CWL tabs,
+    Test_Sheet, Player Tags, ...). Returns (rows per tab, deleted tab names)."""
+    written = await export_everything(sheets, pool, now)
+    deleted = await sheets.keep_only(SHEET_TABS)
+    return written, deleted

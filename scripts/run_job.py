@@ -5,7 +5,9 @@
     python -m scripts.run_job cwl              fetch CWL, print CWL leaderboard
     python -m scripts.run_job backfill         fetch everything for every month the bot keeps
     python -m scripts.run_job show             print all leaderboards from Postgres only
-    python -m scripts.run_job export           write the leaderboards to the Google Sheet
+    python -m scripts.run_job export           write all five tabs to the Google Sheet
+    python -m scripts.run_job rebuild-sheet --yes
+                                               write the five tabs and DELETE every other tab
     python -m scripts.run_job cleanup          delete data older than the retention window
     add --month 2026-10 to fetch, show or export a specific month
 
@@ -27,7 +29,7 @@ from astra.db.jobs import JobRunsRepository
 from astra.db.retention import delete_before
 from astra.db.roster import RosterRepository
 from astra.db.wars import WarsRepository
-from astra.exports import export_cwl, export_donations, export_war_stats
+from astra.exports import SHEET_TABS, export_everything, rebuild_sheet
 from astra.jobs.donations import run_donations_job
 from astra.jobs.wars import run_wars_job
 from astra.months import (available_months, month_key, month_label, month_start, next_month_start,
@@ -62,8 +64,10 @@ async def print_cwl(repo: WarsRepository, now: datetime) -> None:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m scripts.run_job")
-    parser.add_argument("job", choices=["donations", "wars", "cwl", "backfill", "show", "export", "cleanup"])
+    parser.add_argument("job", choices=["donations", "wars", "cwl", "backfill", "show", "export", "rebuild-sheet",
+                                        "cleanup"])
     parser.add_argument("--month", help="YYYY-MM (default: current month)")
+    parser.add_argument("--yes", action="store_true", help="confirm rebuild-sheet (deletes tabs)")
     args = parser.parse_args()
 
     settings = Settings.from_env()
@@ -105,10 +109,17 @@ async def main() -> None:
 
         if args.job == "export":
             sheets = SheetsClient(settings.google_credentials_json, settings.google_sheet_url, writable=True)
-            n = await export_donations(sheets, donations, now)
-            m = await export_war_stats(sheets, wars, now)
-            c = await export_cwl(sheets, wars, now)
-            print(f"Wrote {n} donation rows, {m} war stats rows and {c} CWL rows for {month_label(now)}")
+            written = await export_everything(sheets, pool, now)
+            print(f"Wrote {month_label(now)}: " + ", ".join(f"{tab} {n} rows" for tab, n in written.items()))
+
+        if args.job == "rebuild-sheet":
+            if not args.yes:
+                raise SystemExit("This deletes every tab except " + ", ".join(SHEET_TABS)
+                                 + ". Make a copy of the sheet first (File > Make a copy), then add --yes.")
+            sheets = SheetsClient(settings.google_credentials_json, settings.google_sheet_url, writable=True)
+            written, deleted = await rebuild_sheet(sheets, pool, now)
+            print("Wrote: " + ", ".join(f"{tab} {n} rows" for tab, n in written.items()))
+            print(f"Deleted {len(deleted)} old tabs: " + ", ".join(deleted))
 
         if args.job == "cleanup":
             cutoff = retention_cutoff(today, settings.data_retention_months, settings.data_start_month)

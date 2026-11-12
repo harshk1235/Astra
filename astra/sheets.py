@@ -76,6 +76,25 @@ class SheetsClient:
         tab if needed. Values are written as-is (RAW), not parsed as formulas."""
         await asyncio.to_thread(self._write_sync, worksheet, rows)
 
+    def _keep_only_sync(self, keep: list[str]) -> list[str]:
+        ss = self._open()
+        tabs = ss.worksheets()
+        if not any(ws.title in keep for ws in tabs):
+            raise RuntimeError("refusing to delete every tab: none of the tabs to keep exist yet")
+        deleted = []
+        for ws in tabs:
+            if ws.title not in keep:
+                ss.del_worksheet(ws)
+                deleted.append(ws.title)
+        kept = sorted((ws for ws in ss.worksheets() if ws.title in keep), key=lambda ws: keep.index(ws.title))
+        ss.reorder_worksheets(kept)
+        return deleted
+
+    async def keep_only(self, keep: list[str]) -> list[str]:
+        """Delete every tab not in `keep` and put the kept ones in that order.
+        Returns the deleted tab names."""
+        return await asyncio.to_thread(self._keep_only_sync, keep)
+
     async def get_values(self, worksheet: str | None = None) -> list[list[str]]:
         """All cell values of a worksheet as strings, header row included.
         With no name, reads the spreadsheet's first tab."""

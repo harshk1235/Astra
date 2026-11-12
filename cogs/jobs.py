@@ -17,7 +17,7 @@ from astra.db.membership import MembershipRepository
 from astra.db.roster import RosterRepository
 from astra.db.wars import WarsRepository
 from astra.db.retention import delete_before
-from astra.exports import export_cwl, export_donations, export_war_stats
+from astra.exports import export_all_data, export_cwl, export_donations, export_members, export_war_stats
 from astra.months import retention_cutoff
 from astra.jobs.donations import run_donations_job
 from astra.jobs.roster import sync_roster
@@ -71,6 +71,7 @@ class Jobs(commands.Cog):
         try:
             seen, left = await sync_roster(self.client, MembershipRepository(self.bot.db))
             log.info("roster: %d accounts in tracked clans, %d linked accounts left one", seen, left)
+            await self._export("members", export_members, self.bot.db)
         except Exception:
             log.exception("roster sync crashed")
 
@@ -83,6 +84,7 @@ class Jobs(commands.Cog):
             )
             if result.status in ("ok", "partial"):
                 await self._export("donations", export_donations, repo)
+                await self._export("all_data", export_all_data, self.bot.db)
         except Exception:
             log.exception("donations job crashed")
 
@@ -99,6 +101,7 @@ class Jobs(commands.Cog):
                     await self._export(name, export, repo)
             except Exception:
                 log.exception("%s wars job crashed", war_type)
+        await self._export("all_data", export_all_data, self.bot.db)
 
     @tasks.loop(hours=24)
     async def cleanup_loop(self):
