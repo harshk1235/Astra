@@ -73,3 +73,40 @@ class DonationsRepository:
             season, clan_tag, include_inactive,
         )
         return [LeaderboardEntry(r["name"], r["donated"], r["received"], r["discord_user_id"]) for r in rows]
+
+    async def account_leaderboard(self, season: str, *, clan_tag: str | None = None) -> list["AccountDonations"]:
+        return await account_leaderboard(self._pool, season, clan_tag=clan_tag)
+
+
+@dataclass(frozen=True)
+class AccountDonations:
+    tag: str
+    name: str        # the Clash of Clans account name
+    donated: int
+    received: int
+    discord_id: int | None
+
+
+async def account_leaderboard(pool: asyncpg.Pool, season: str, *, clan_tag: str | None = None
+                              ) -> list[AccountDonations]:
+    """Per Clash of Clans account (not summed per person), most donated first.
+    Same filter as the per-person board: accounts of people in the clan(s),
+    plus any account that donated something."""
+    rows = await pool.fetch(
+        """SELECT a.tag, a.name, m.discord_user_id,
+                  SUM(d.donated)::int  AS donated,
+                  SUM(d.received)::int AS received
+           FROM donation_snapshots d
+           JOIN clans c    ON c.tag = d.clan_tag AND c.active
+           JOIN accounts a ON a.tag = d.account_tag
+           JOIN members  m ON m.id  = a.member_id
+           WHERE d.season = $1 AND ($2::text IS NULL OR d.clan_tag = $2)
+           GROUP BY a.tag, a.name, m.id, m.discord_user_id
+           HAVING SUM(d.donated) > 0
+               OR EXISTS (SELECT 1 FROM clan_memberships cm
+                          JOIN clans c2 ON c2.tag = cm.clan_tag AND c2.active
+                          WHERE cm.member_id = m.id AND ($2::text IS NULL OR cm.clan_tag = $2))
+           ORDER BY donated DESC, received ASC, a.name""",
+        season, clan_tag,
+    )
+    return [AccountDonations(r["tag"], r["name"], r["donated"], r["received"], r["discord_user_id"]) for r in rows]

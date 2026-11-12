@@ -174,3 +174,23 @@ def test_donation_leaderboard_by_clan():
         dop = [(e.name, e.donated) for e in await repo.leaderboard("2026-11", clan_tag="#2Y0VPJUVJ")]
         assert dop == [("Bob", 1200), ("Harsh", 300)]
     run_with_db(t)
+
+
+def test_account_leaderboard_is_per_account():
+    async def t(pool):
+        await RosterRepository(pool).import_player_tags(PLAYER_TAGS)
+        await pool.execute("UPDATE members SET discord_user_id = 42 WHERE display_name = 'Harsh'")
+        repo = DonationsRepository(pool)
+        await repo.upsert_season("2026-11", [
+            DonationRow("#2Y0VPJUVJ", "#28VUPJRPU", 1000, 200),   # Harsh's main
+            DonationRow("#28VUPJRPU", "#2Y0VPJUVJ", 500, 100),    # Harsh's alt
+            DonationRow("#QQQQQQQQ", "#28VUPJRPU", 1200, 900),    # Bob
+        ])
+        accounts = await repo.account_leaderboard("2026-11")
+        assert [(a.name, a.donated, a.discord_id) for a in accounts] == [
+            ("BobAcc", 1200, None), ("HarshMain", 1000, 42), ("HarshAlt", 500, 42)]
+        people = await repo.leaderboard("2026-11")                        # the per-player toggle
+        assert [(p.name, p.donated) for p in people] == [("Harsh", 1500), ("Bob", 1200)]
+        pr = await repo.account_leaderboard("2026-11", clan_tag="#28VUPJRPU")
+        assert [a.name for a in pr] == ["BobAcc", "HarshMain"]
+    run_with_db(t)
