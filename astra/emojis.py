@@ -3,7 +3,8 @@
 Every key below has a Unicode default. To use a custom server emoji instead,
 add the same key to emoji.json with the emoji's code, e.g.
     "check": "<:tick:123456789012345678>"
-(In Discord, type \\:tick: in a channel to get that code.)
+(In Discord, type \\:tick: in a channel to get that code. Animated emojis
+start with <a: instead of <: and don't show up without it.)
 TH icons are "th<level>" keys, as before.
 """
 from __future__ import annotations
@@ -30,6 +31,8 @@ DEFAULTS = {
     "co_leader": "⚜️",
     "leader": "👑",
     "clan": "🛡️",
+    "role": "⚔️",            # before "Co-Leader of Phoenix Reborn" in /profile
+    "hero_bk": "👑", "hero_aq": "🏹", "hero_gw": "📖", "hero_rc": "🛡️", "hero_mp": "🦇", "hero_dd": "🐉",
 }
 
 EMOJI_FILE = Path(__file__).resolve().parent.parent / "emoji.json"

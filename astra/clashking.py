@@ -1,4 +1,5 @@
-"""Async HTTP client for the ClashKing API.
+"""Async HTTP client for the ClashKing API (also used for the official
+Clash of Clans API, which has the same JSON-over-HTTPS shape plus a token).
 
 Failure handling, in one place for every fetcher:
 - At most `max_concurrency` requests in flight (don't hammer a free API).
@@ -41,6 +42,7 @@ class ClashKingClient:
         backoff_base_s: float = 1.0,
         max_backoff_s: float = 30.0,
         session: aiohttp.ClientSession | None = None,
+        headers: dict[str, str] | None = None,
         sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
         jitter: Callable[[], float] = random.random,
     ):
@@ -54,10 +56,11 @@ class ClashKingClient:
         self._owns_session = session is None
         self._sleep = sleep
         self._jitter = jitter
+        self._headers = {"User-Agent": "Astra-bot", **(headers or {})}
 
     async def __aenter__(self) -> "ClashKingClient":
         if self._session is None:
-            self._session = aiohttp.ClientSession(headers={"User-Agent": "Astra-bot"})
+            self._session = aiohttp.ClientSession(headers=self._headers)
         return self
 
     async def __aexit__(self, *exc) -> None:
@@ -113,3 +116,13 @@ def _parse_retry_after(value: str | None) -> float | None:
         return max(0.0, float(value)) if value is not None else None
     except ValueError:
         return None  # HTTP-date form; fall back to our own backoff
+
+
+OFFICIAL_API_URL = "https://api.clashofclans.com/v1"
+
+
+def official_client(token: str, base_url: str = OFFICIAL_API_URL) -> ClashKingClient:
+    """Client for the official API. Its keys are tied to the server's IP
+    address, which is why it's only usable from a host with a fixed IP (EC2
+    with an Elastic IP); ClashKing needs no key."""
+    return ClashKingClient(base_url, headers={"Authorization": f"Bearer {token}"}, max_concurrency=10)

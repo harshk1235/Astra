@@ -266,6 +266,16 @@ class MembershipRepository:
                                           r["owner_name"], r["th_level"], r["ingame_clan_tag"]))
         return list(people.values())
 
+    async def accounts_of(self, member_id: int) -> list[Account]:
+        rows = await self._pool.fetch(
+            """SELECT a.tag, a.name, a.member_id, a.th_level, a.ingame_clan_tag,
+                      m.discord_user_id, m.display_name
+               FROM accounts a JOIN members m ON m.id = a.member_id
+               WHERE a.member_id = $1 ORDER BY a.th_level DESC NULLS LAST, lower(a.name)""",
+            member_id,
+        )
+        return [_account(r) for r in rows]
+
     async def accounts_by_tag(self, tags: list[str]) -> dict[str, Account]:
         rows = await self._pool.fetch(
             """SELECT a.tag, a.name, a.member_id, a.th_level, a.ingame_clan_tag,

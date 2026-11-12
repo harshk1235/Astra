@@ -44,6 +44,10 @@ class Settings:
     log_channel_id: int | None = None
     # Footer icon for every embed; empty = the bot's own avatar (recommended).
     footer_icon_url: str | None = None
+    # Official Clash of Clans API (developer.clashofclans.com). Optional: used by
+    # /profile for hero levels and in-game roles. The key is tied to an IP.
+    coc_api_token: str | None = None
+    coc_api_base_url: str = "https://api.clashofclans.com/v1"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -73,4 +77,6 @@ class Settings:
             data_start_month=os.environ.get("DATA_START_MONTH", "").strip() or "2026-10",
             log_channel_id=int(os.environ["LOG_CHANNEL_ID"]) if os.environ.get("LOG_CHANNEL_ID", "").strip().isdigit() else None,
             footer_icon_url=os.environ.get("FOOTER_ICON_URL", "").strip() or None,
+            coc_api_token=os.environ.get("COC_API_TOKEN", "").strip() or None,
+            coc_api_base_url=os.environ.get("COC_API_BASE_URL", "").strip() or "https://api.clashofclans.com/v1",
         )

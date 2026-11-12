@@ -4,7 +4,7 @@ import os
 import discord
 from discord.ext import commands
 
-from astra.clashking import ClashKingClient
+from astra.clashking import ClashKingClient, official_client
 from astra import branding
 from astra.config import Settings
 from astra.db import create_pool, run_migrations
@@ -29,6 +29,7 @@ class Astra(commands.Bot):
         )
         self.db = None  # asyncpg pool, set in setup_hook when DATABASE_URL is configured
         self.clashking: ClashKingClient | None = None   # shared by jobs and leader commands
+        self.coc: ClashKingClient | None = None         # official API, if COC_API_TOKEN is set
 
     async def setup_hook(self) -> None:
         # setup_hook runs after login, so the bot's avatar is known here.
@@ -41,6 +42,9 @@ class Astra(commands.Bot):
             log.info("Database ready (%d new migration(s) applied)", len(applied))
             self.clashking = ClashKingClient(self.settings.clashking_base_url)
             await self.clashking.__aenter__()
+        if self.settings.coc_api_token:
+            self.coc = official_client(self.settings.coc_api_token, self.settings.coc_api_base_url)
+            await self.coc.__aenter__()
         else:
             log.warning("DATABASE_URL not set; running in Sheets-only mode")
 
@@ -70,6 +74,8 @@ class Astra(commands.Bot):
         await super().close()
         if self.clashking is not None:
             await self.clashking.close()
+        if self.coc is not None:
+            await self.coc.close()
         if self.db is not None:
             await self.db.close()
 
