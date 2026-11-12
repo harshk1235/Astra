@@ -42,6 +42,8 @@ class Settings:
     data_start_month: str = "2026-10"
     # Optional channel where every leader action (joined, promoted, ...) is posted.
     log_channel_id: int | None = None
+    # Footer icon for every embed; empty = the bot's own avatar (recommended).
+    footer_icon_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -70,4 +72,5 @@ class Settings:
             data_retention_months=int(os.environ.get("DATA_RETENTION_MONTHS", "2")),
             data_start_month=os.environ.get("DATA_START_MONTH", "").strip() or "2026-10",
             log_channel_id=int(os.environ["LOG_CHANNEL_ID"]) if os.environ.get("LOG_CHANNEL_ID", "").strip().isdigit() else None,
+            footer_icon_url=os.environ.get("FOOTER_ICON_URL", "").strip() or None,
         )

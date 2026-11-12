@@ -8,6 +8,7 @@ import json
 import logging
 from collections import defaultdict
 
+from astra.branding import footer
 from astra.clan_option import clan_autocomplete, resolve_filters
 from astra.db.wars import WarsRepository
 from astra.exports import cwl_rows
@@ -126,7 +127,7 @@ class CWLStats(commands.Cog):
                 description=intro + header + "".join(chunk),
                 color=0x000000
             )
-            embed.set_footer(text=f"Phoenix Reborn – Page {n}/{len(chunks)}")
+            footer(embed, f"Page {n}/{len(chunks)}")
             pages.append(embed)
         return pages
 
@@ -285,7 +286,7 @@ class CWLDetailView(View):
                 description=description.strip(),
                 color=0x000000
             )
-            embed.set_footer(text=f"Phoenix Reborn — {self.owner} • Page {i//3 + 1}")
+            footer(embed, f"{self.owner} • Page {i//3 + 1}")
             pages.append(embed)
 
         return pages

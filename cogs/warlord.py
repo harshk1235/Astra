@@ -5,6 +5,7 @@ import json
 import logging
 from typing import Optional
 
+from astra.branding import footer
 from astra.clan_option import clan_autocomplete, resolve_filters
 from astra.db.wars import WarsRepository
 from astra.exports import war_stats_rows
@@ -70,10 +71,7 @@ class WarlordCog(commands.Cog):
                         description=intro + heading + body if not embeds else body,
                         color=0x000000
                     )
-                    embed.set_footer(
-                        text="Phoenix Reborn",
-                        icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png"
-                    )
+                    footer(embed)
                     embeds.append(embed)
                     body = ""
     
@@ -86,10 +84,7 @@ class WarlordCog(commands.Cog):
                     description=intro + heading + body if not embeds else body,
                     color=0x000000
                 )
-                embed.set_footer(
-                    text="Phoenix Reborn",
-                    icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png"
-                )
+                footer(embed)
                 embeds.append(embed)
     
             if target == ctx.channel:

@@ -6,6 +6,7 @@ import logging
 from astra.db.donations import DonationsRepository
 from astra.db.jobs import JobRunsRepository
 from astra.exports import donation_rows
+from astra.branding import footer
 from astra.clan_option import clan_autocomplete, resolve_filters
 from astra.month_option import MonthError, month_autocomplete
 from astra.months import month_key, month_label
@@ -65,10 +66,7 @@ class Donations(commands.Cog):
                 description="\n\n💰 Here's a look at who’s fueling the clan with generosity this season! Check out the top donors and receivers below. \n\n" + heading + text,
                 color=discord.Color.from_rgb(0, 0, 0)
             )
-            embed.set_footer(
-                text="Phoenix Reborn",
-                icon_url="https://media.discordapp.net/attachments/1178548363948462100/1187010410767994880/phoenix.png?ex=68500f97&is=684ebe17&hm=8dde095ff75caa82b9e8a2ded1b35682220e8a47ba0cf3026c64f491b89ea8d3&=&format=webp&quality=lossless"
-            )
+            footer(embed)
 
             if updated_at is not None:
                 embed.timestamp = updated_at  # Discord shows it as "Last updated" local time

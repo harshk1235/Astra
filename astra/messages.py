@@ -7,13 +7,19 @@ from typing import Iterable
 
 import discord
 
+from astra.branding import emoji_image_url, footer
 from astra.db.membership import Account, Clan, ClanPerson
 from astra.emojis import emoji, th
 from astra.jobs.roster import InGameMember
 from astra.leaders import RANK_NAMES, Result
 from astra.roles.rules import Rank
 
-RANK_EMOJI_KEYS = {Rank.LEADER: "leader", Rank.CO_LEADER: "co_leader", Rank.ELDER: "elder", Rank.MEMBER: "member"}
+ROLE_SHORT = {Rank.LEADER: "Lead", Rank.CO_LEADER: "Co", Rank.ELDER: "Eld", Rank.MEMBER: "Mem"}
+
+
+def clan_logo(clan: Clan) -> str:
+    """The clan's logo emoji from emoji.json ('logo_pr', 'logo_dop', ...), or ''."""
+    return emoji(f"logo_{clan.alias.lower()}")
 GREEN, ORANGE, BLACK = 0x2ECC71, 0xE67E22, 0x000000
 EMBED_LIMIT = 4000   # Discord's limit is 4096; leave room
 
@@ -30,7 +36,8 @@ def render_result(result: Result, added: Iterable[str] = (), removed: Iterable[s
     roles = role_lines(added, removed)
     extra = [f"{emoji('warning')} {n}" for n in notes]
     who = f"<@{result.target_id}>" if result.target_id else "they"
-    clan = f"**{result.clan.name}**" if result.clan else ""
+    logo = clan_logo(result.clan) if result.clan else ""
+    clan = f"{logo + ' ' if logo else ''}**{result.clan.name}**" if result.clan else ""
     tag, name = result.account or ("", "")
 
     if result.kind in ("promoted", "demoted"):
@@ -39,8 +46,7 @@ def render_result(result: Result, added: Iterable[str] = (), removed: Iterable[s
             title=f"{emoji('promote' if up else 'demote')} {'Promotion' if up else 'Demotion'}",
             description="\n".join([f"{who} is now **{RANK_NAMES[result.rank]}** in {clan}.", ""] + roles + extra),
             color=GREEN if up else ORANGE)
-        if actor:
-            embed.set_footer(text=f"{'Promoted' if up else 'Demoted'} by {actor}")
+        footer(embed, f"{'Promoted' if up else 'Demoted'} by {actor}" if actor else None)
         return None, embed
 
     if result.kind == "joined":
@@ -58,16 +64,26 @@ def render_result(result: Result, added: Iterable[str] = (), removed: Iterable[s
     return "\n".join(lines), None
 
 
-def _embeds(title: str, intro: str, lines: list[str]) -> list[discord.Embed]:
-    """Leaderboard-style embeds: first one titled, all under the size limit."""
-    embeds, body = [], intro
+def _embeds(clan: Clan, lines: list[str], intro: str = "", footer_extra: str | None = None,
+            title: str | None = None) -> list[discord.Embed]:
+    """List embeds with the clan's logo and name as the header, split under
+    Discord's size limit, each with the standard footer."""
+    chunks, body = [], intro
     for line in lines:
         if len(body) + len(line) + 1 > EMBED_LIMIT:
-            embeds.append(discord.Embed(title=title if not embeds else None, description=body, color=BLACK))
+            chunks.append(body)
             body = ""
         body += line + "\n"
-    embeds.append(discord.Embed(title=title if not embeds else None, description=body, color=BLACK))
-    return embeds[:10]
+    chunks.append(body)
+    embeds = []
+    for n, text in enumerate(chunks[:10]):
+        e = discord.Embed(title=title if n == 0 else None, description=text, color=BLACK)
+        if n == 0:
+            e.set_author(name=f"{clan.name} ({clan.tag})", icon_url=emoji_image_url(clan_logo(clan)))
+        page = f"Page {n + 1}/{len(chunks[:10])}" if len(chunks) > 1 else None
+        footer(e, " • ".join(x for x in (footer_extra, page) if x) or None)
+        embeds.append(e)
+    return embeds
 
 
 def clan_members_embeds(clan: Clan, ingame: list[InGameMember], accounts: dict[str, Account]) -> list[discord.Embed]:
@@ -84,31 +100,27 @@ def clan_members_embeds(clan: Clan, ingame: list[InGameMember], accounts: dict[s
     lines += [line(m) for m in unlinked] or [f"{blank}Everyone is linked {emoji('welcome')}"]
     lines += ["", f"**{emoji('check')} Linked · {len(linked)}**"]
     lines += [line(m, f"  <@{owner[m.tag]}>") for m in linked]
-    intro = f"**{clan.name}** · {len(members)} accounts in-game right now\n\n"
-    return _embeds(f"{emoji('clan')} {clan.alias} Members", intro, lines)
+    return _embeds(clan, lines, footer_extra=f"{len(members)} accounts in-game")
 
 
 def clan_linked_embeds(clan: Clan, people: list[ClanPerson], in_clan: set[str]) -> list[discord.Embed]:
-    """/clanlinked: everyone registered in the clan, one line each. People with
-    no account in the clan in-game come first, so leaders can /remove them."""
-    blank = emoji("blank")
-
-    def line(p: ClanPerson, icon: str) -> str:
-        here = sum(1 for a in p.accounts if a.tag in in_clan)
-        who = f"<@{p.discord_user_id}>" if p.discord_user_id else p.display_name
-        return f"{icon}{blank}`{here:^3} {len(p.accounts):^3}`  {who}"
+    """/clanlinked: a ROLE / TAG / NAME table of every registered account that's
+    in the clan in-game, with the owner's mention. People with no account in the
+    clan in-game are listed first, so leaders can /remove them."""
+    header = "`ROLE  TAG       `  **NAME**"
+    row = lambda rank, tag, name, discord_id: (
+        f"`{ROLE_SHORT[rank]:<4}  {tag:<10}`  {name}" + (f"  <@{discord_id}>" if discord_id else ""))
 
     gone = [p for p in people if not any(a.tag in in_clan for a in p.accounts)]
-    staying = [p for p in people if p not in gone]
+    rows = sorted(((p.rank, a.tag, a.name, p.discord_user_id) for p in people for a in p.accounts
+                   if a.tag in in_clan), key=lambda r: (-r[0], r[2].lower()))
     lines = []
     if gone:
-        lines.append(f"**{emoji('warning')} Not in {clan.alias} in-game · {len(gone)}**  ·  `/remove` if they left")
-        lines += [line(p, emoji(RANK_EMOJI_KEYS[p.rank])) for p in gone]
+        lines += [f"**{emoji('warning')} Not in {clan.alias} in-game · {len(gone)}**  ·  `/remove` if they left",
+                  header]
+        lines += [row(p.rank, p.accounts[0].tag if p.accounts else "—", p.display_name, p.discord_user_id)
+                  for p in sorted(gone, key=lambda p: (-p.rank, p.display_name.lower()))]
         lines.append("")
-    lines.append(f"**{emoji('check')} In the clan · {len(staying)}**")
-    lines.append(f"{blank}{blank}`In  Acc`")
-    lines += [line(p, emoji(RANK_EMOJI_KEYS[p.rank])) for p in staying]
-    legend = "  ".join(f"{emoji(RANK_EMOJI_KEYS[r])} {RANK_NAMES[r]}" for r in sorted(Rank, reverse=True))
-    lines += ["", f"-# {legend}  ·  In = accounts in {clan.alias} now  ·  Acc = accounts linked"]
-    intro = f"**{clan.name}** · {len(people)} registered\n\n"
-    return _embeds(f"{emoji('clan')} {clan.alias} Registered Members", intro, lines)
+    lines += [f"**{emoji('check')} In the clan · {len(rows)} accounts**", header]
+    lines += [row(*r) for r in rows]
+    return _embeds(clan, lines, footer_extra=f"{len(people)} registered")

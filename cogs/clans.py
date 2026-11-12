@@ -10,6 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from astra.branding import footer
 from astra.clan_option import clan_autocomplete
 from astra.db.membership import MembershipRepository
 from astra.roles.rules import Rank
@@ -127,7 +128,7 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
         common = await repo.common_role_id()
         lines.append(f"Common role for everyone: {f'<@&{common}>' if common else '*not set* (`/clan commonrole`)'}")
         await interaction.response.send_message(
-            embed=discord.Embed(title="Tracked clans", description="\n\n".join(lines), color=0x000000),
+            embed=footer(discord.Embed(title="Tracked clans", description="\n\n".join(lines), color=0x000000)),
             allowed_mentions=discord.AllowedMentions.none())
 
     @app_commands.command(name="remove", description="Stop tracking a clan (its history is kept)")

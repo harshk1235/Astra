@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 
 from astra.clashking import ClashKingClient
+from astra import branding
 from astra.config import Settings
 from astra.db import create_pool, run_migrations
 from astra.sheets import SheetsClient
@@ -30,6 +31,8 @@ class Astra(commands.Bot):
         self.clashking: ClashKingClient | None = None   # shared by jobs and leader commands
 
     async def setup_hook(self) -> None:
+        # setup_hook runs after login, so the bot's avatar is known here.
+        branding.configure(self.settings.footer_icon_url or (self.user.display_avatar.url if self.user else None))
         if self.settings.database_url:
             # Fail fast: if the database is unreachable, crash at startup
             # (Docker restarts us) rather than fail on the first command.
