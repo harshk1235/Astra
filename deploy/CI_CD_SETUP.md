@@ -41,7 +41,7 @@ The AWS Free plan has no IAM *Identity providers* page, so GitHub uses a locked-
 2. Permissions: **Attach policies directly**, tick nothing → Next → **Create user**.
 3. Open the user → **Add permissions → Create inline policy → JSON**, paste
    `deploy/github-deploy-policy.json` with `ACCOUNT_ID` (top-right menu, 12 digits, no dashes)
-   and `INSTANCE_ID` (EC2 → Instances, starts with `i-`) filled in (both appear twice) →
+   and `INSTANCE_ID` (EC2 → Instances, starts with `i-`) filled in (`ACCOUNT_ID` appears twice) →
    Next → name it `deploy-astra` → **Create policy**.
 4. Same user → **Security credentials** tab → **Create access key** → use case
    **Third-party service** → tick the confirmation → Next → **Create access key**.
