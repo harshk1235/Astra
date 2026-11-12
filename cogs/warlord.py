@@ -6,11 +6,12 @@ import logging
 from typing import Optional
 
 from astra.branding import footer
+from astra.csv_export import CsvView, safe_filename
 from astra.clan_option import clan_autocomplete, resolve_filters
 from astra.db.wars import WarsRepository
 from astra.exports import war_stats_rows
 from astra.month_option import MonthError, month_autocomplete
-from astra.months import month_label, next_month_start
+from astra.months import month_key, month_label, next_month_start
 from astra.timing import timed
 
 log = logging.getLogger(__name__)
@@ -87,12 +88,14 @@ class WarlordCog(commands.Cog):
                 footer(embed)
                 embeds.append(embed)
     
-            if target == ctx.channel:
-                for embed in embeds:
-                    await ctx.send(embed=embed)
-            else:
-                for embed in embeds:
-                    await target.send(embed=embed)
+            # Download CSV on the last message: header + rows (+ Discord ID).
+            csv_rows = [data[0] + ["Discord ID"]] + data[1:]
+            view = CsvView(csv_rows, safe_filename("astra-warstats", clan_.alias if clan_ else "", month_key(start)))
+            destination = ctx if target == ctx.channel else target
+            for i, embed in enumerate(embeds):
+                extra = {"view": view} if i == len(embeds) - 1 else {}
+                await destination.send(embed=embed, **extra)
+            if destination is not ctx:
                 await ctx.send(f"Posted the leaderboard in {target.mention}.", ephemeral=True)
 
         except Exception:

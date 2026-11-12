@@ -11,7 +11,8 @@ from collections import defaultdict
 from astra.branding import footer
 from astra.clan_option import clan_autocomplete, resolve_filters
 from astra.db.wars import WarsRepository
-from astra.exports import cwl_rows
+from astra.csv_export import CsvButton, safe_filename
+from astra.exports import CWL_HEADER, cwl_rows
 from astra.month_option import MonthError, month_autocomplete
 from astra.months import cwl_sheet_name, month_label, next_month_start
 from astra.timing import timed
@@ -160,6 +161,9 @@ class CWLLeaderboardView(View):
 
         self.add_item(self.prev)
         self.add_item(self.next)
+        # Download CSV: header + every row, with the owner's Discord ID.
+        csv_rows = [CWL_HEADER + ["Discord ID"]] + [r + [""] * (len(CWL_HEADER) + 1 - len(r)) for r in cwl_data.values()]
+        self.add_item(CsvButton(csv_rows, safe_filename("astra-cwl", month.replace(" ", "-"))))
 
     async def go_prev(self, interaction):
         if interaction.user != self.ctx.author:

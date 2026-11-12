@@ -7,6 +7,7 @@ from astra.db.donations import DonationsRepository
 from astra.db.jobs import JobRunsRepository
 from astra.exports import donation_rows
 from astra.branding import footer
+from astra.csv_export import CsvView, safe_filename
 from astra.clan_option import clan_autocomplete, resolve_filters
 from astra.month_option import MonthError, month_autocomplete
 from astra.months import month_key, month_label
@@ -71,10 +72,12 @@ class Donations(commands.Cog):
             if updated_at is not None:
                 embed.timestamp = updated_at  # Discord shows it as "Last updated" local time
 
+            view = CsvView([["Name", "Donated", "Received"]] + data,
+                           safe_filename("astra-donations", clan_.alias if clan_ else "", month_key(start)))
             if is_slash:
-                await source.followup.send(embed=embed)
+                await source.followup.send(embed=embed, view=view)
             else:
-                await source.send(embed=embed)
+                await source.send(embed=embed, view=view)
 
         except Exception:
             log.exception("Failed to build donation leaderboard")
