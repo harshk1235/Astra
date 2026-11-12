@@ -2,12 +2,12 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "RunTheDeployCommandOnTheBotServerOnly",
+      "Sid": "RunOnlyTheDeployDocumentOnTheBotServer",
       "Effect": "Allow",
       "Action": "ssm:SendCommand",
       "Resource": [
         "arn:aws:ec2:ap-south-1:ACCOUNT_ID:instance/INSTANCE_ID",
-        "arn:aws:ssm:ap-south-1::document/AWS-RunShellScript"
+        "arn:aws:ssm:ap-south-1:ACCOUNT_ID:document/AstraDeploy"
       ]
     },
     {

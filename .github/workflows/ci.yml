@@ -2,9 +2,13 @@
 #   Every push and pull request: run the tests (with a real Postgres) and build the Docker image.
 #   Push to main, when both pass: deploy that exact commit to the EC2 server.
 #
-# The deploy uses AWS Systems Manager (SSM), not SSH: the server keeps port 22
-# closed to the internet, and GitHub gets short-lived AWS credentials through
-# OpenID Connect (no AWS keys stored in GitHub). Setup: deploy/CI_CD_SETUP.md
+# The deploy uses AWS Systems Manager (SSM), not SSH, so the server keeps port 22
+# closed to the internet. GitHub may only run one SSM document, AstraDeploy,
+# which does nothing but deploy a commit on main. Credentials: OpenID Connect
+# if AWS_DEPLOY_ROLE_ARN is set (short-lived, nothing stored), otherwise a
+# restricted IAM user's access key (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY),
+# for AWS plans where OIDC identity providers aren't available.
+# Setup: deploy/CI_CD_SETUP.md
 name: CI/CD
 
 on:
@@ -65,21 +69,30 @@ jobs:
       cancel-in-progress: false   # never interrupt a deploy halfway
     env:
       INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+      USE_OIDC: ${{ secrets.AWS_DEPLOY_ROLE_ARN != '' }}
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: AWS credentials (OIDC role)
+        if: env.USE_OIDC == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
 
-      - name: Run deploy/update.sh on the server for this commit
+      - name: AWS credentials (restricted access key)
+        if: env.USE_OIDC != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+
+      - name: Deploy this commit on the server (SSM document AstraDeploy)
         run: |
-          printf '{"commands":["sudo -u ubuntu -H /home/ubuntu/astra/deploy/update.sh %s"]}' "$GITHUB_SHA" > params.json
           command_id=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
-            --document-name AWS-RunShellScript \
+            --document-name AstraDeploy \
             --comment "deploy ${GITHUB_SHA::7}" \
-            --timeout-seconds 900 \
-            --parameters file://params.json \
+            --parameters "commit=$GITHUB_SHA" \
             --query Command.CommandId --output text)
           echo "SSM command: $command_id"
 

@@ -4,15 +4,17 @@
 
 1. **Tests**: `pytest` against a real Postgres 16 (a GitHub Actions service container).
 2. **Docker**: the image must build.
-3. **Deploy** (pushes to `main` only, and only if 1 and 2 pass): runs
-   `deploy/update.sh <commit>` on the EC2 server through AWS Systems Manager.
-   `update.sh` moves the server to exactly that commit, rebuilds, restarts, and
-   fails the job if the bot doesn't log "is online" within 2 minutes.
+3. **Deploy** (pushes to `main` only, and only if 1 and 2 pass): asks AWS Systems Manager
+   to run the `AstraDeploy` document on the EC2 server, which runs `deploy/update.sh <commit>`.
+   `update.sh` fast-forwards the server to exactly that commit on `main`, rebuilds, restarts,
+   and fails the job if the bot doesn't log "is online" within 2 minutes.
 
-Why Systems Manager instead of SSH: GitHub's runners have changing IPs, so
-SSH would mean opening port 22 to the whole internet. With SSM the server
-keeps SSH closed to everyone but you, and GitHub gets short-lived AWS
-credentials through OpenID Connect, so no AWS keys are stored in GitHub.
+Why Systems Manager instead of SSH: GitHub's runners have changing IPs, so SSH would mean
+opening port 22 to the whole internet. With SSM the server keeps SSH closed to everyone but you.
+
+What GitHub is allowed to do: send **one** command, `AstraDeploy`, to **one** server. The
+document only accepts a 40-character commit ID and `update.sh` only fast-forwards `main`,
+so even a leaked key can do nothing but redeploy code that is already on `main`.
 
 ## 1. Let the server talk to Systems Manager
 
@@ -22,28 +24,37 @@ credentials through OpenID Connect, so no AWS keys are stored in GitHub.
 4. Wait ~5 minutes, then Systems Manager → **Fleet Manager**: the instance should be listed as **Online**.
    If not, on the server run `sudo snap restart amazon-ssm-agent` (Ubuntu's AWS images ship the agent).
 
-## 2. Let GitHub deploy (and only GitHub, only from main)
+## 2. Create the deploy command (`AstraDeploy`)
 
-1. IAM → **Identity providers** → **Add provider** → **OpenID Connect**
-   - Provider URL: `https://token.actions.githubusercontent.com`
-   - Audience: `sts.amazonaws.com` → **Add provider**.
-2. IAM → **Roles** → **Create role** → Trusted entity: **Web identity**
-   - Identity provider: `token.actions.githubusercontent.com`, Audience: `sts.amazonaws.com`
-   - GitHub organization: `harshk1235`, Repository: `Astra`, Branch: `main` → Next.
-   - Skip the permissions list → Next → name it `astra-github-deploy` → **Create role**.
-3. Open the new role → **Add permissions → Create inline policy → JSON**, paste
-   `deploy/github-deploy-policy.json` with `ACCOUNT_ID` (top-right menu in the console,
-   12 digits, no dashes) and `INSTANCE_ID` (EC2 → Instances, starts with `i-`) filled in →
-   name it `deploy-astra` → **Create policy**.
-4. Copy the role's **ARN** (looks like `arn:aws:iam::123456789012:role/astra-github-deploy`).
+Make sure the console's region (top right) is **Asia Pacific (Mumbai) ap-south-1**.
 
-## 3. Tell GitHub
+1. Systems Manager → **Documents** (left menu, under *Shared resources*) → **Create document → Command or Session**.
+2. Name: `AstraDeploy` (exactly). Target type: leave empty. Document type: **Command document**.
+3. Content: **YAML**, delete the example and paste all of `deploy/astra-deploy-document.yaml` → **Create document**.
+
+## 3. Give GitHub a key that can only run that command
+
+The AWS Free plan has no IAM *Identity providers* page, so GitHub uses a locked-down IAM user.
+
+1. IAM → **Users** → **Create user** → name `astra-github-deploy`, leave
+   "Provide user access to the AWS Management Console" **unticked** → Next.
+2. Permissions: **Attach policies directly**, tick nothing → Next → **Create user**.
+3. Open the user → **Add permissions → Create inline policy → JSON**, paste
+   `deploy/github-deploy-policy.json` with `ACCOUNT_ID` (top-right menu, 12 digits, no dashes)
+   and `INSTANCE_ID` (EC2 → Instances, starts with `i-`) filled in (both appear twice) →
+   Next → name it `deploy-astra` → **Create policy**.
+4. Same user → **Security credentials** tab → **Create access key** → use case
+   **Third-party service** → tick the confirmation → Next → **Create access key**.
+   Copy both values now; the secret is shown only once. Don't put them anywhere but GitHub.
+
+## 4. Tell GitHub
 
 Repository → **Settings → Secrets and variables → Actions → New repository secret**:
 
 | Name | Value |
 |---|---|
-| `AWS_DEPLOY_ROLE_ARN` | the role ARN from step 2.4 |
+| `AWS_ACCESS_KEY_ID` | access key from step 3.4 (starts with `AKIA`) |
+| `AWS_SECRET_ACCESS_KEY` | secret access key from step 3.4 |
 | `EC2_INSTANCE_ID` | the instance ID, `i-...` |
 
 Then the **Variables** tab → **New repository variable**: `DEPLOY_ENABLED` = `true`.
@@ -52,6 +63,19 @@ Optionally also `AWS_REGION` if the server isn't in `ap-south-1`.
 
 ## Check it
 
-Push anything to `main` (or Actions → CI/CD → **Re-run all jobs** on the latest run) and watch
+Push anything to `main` (or Actions → CI/CD → open the latest run → **Re-run all jobs**) and watch
 the **Actions** tab: Tests → Docker → Deploy to EC2. The deploy step prints the server's output.
 On other branches only the tests and the Docker build run.
+
+## If a key ever leaks
+
+IAM → Users → `astra-github-deploy` → Security credentials → **Deactivate** and delete the key,
+create a new one, and update the two GitHub secrets.
+
+## Optional: no stored key (OIDC)
+
+On AWS plans that have IAM → **Identity providers**, you can drop the access key: add the OpenID
+Connect provider `https://token.actions.githubusercontent.com` (audience `sts.amazonaws.com`),
+create a **Web identity** role limited to `harshk1235/Astra` branch `main` with the same inline
+policy, and store its ARN as the secret `AWS_DEPLOY_ROLE_ARN`. When that secret exists the
+workflow uses it and ignores the access key secrets.

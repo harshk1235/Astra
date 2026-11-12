@@ -1,0 +1,19 @@
+# AWS Systems Manager document "AstraDeploy": the only thing GitHub's deploy
+# credentials are allowed to run on the server. It accepts nothing but a full
+# commit ID and runs deploy/update.sh for it, so even leaked credentials can
+# only redeploy a commit that's already on main (update.sh refuses anything
+# that isn't a fast-forward of main).
+schemaVersion: "2.2"
+description: "Deploy Astra: update the server to a commit on main and restart the bot"
+parameters:
+  commit:
+    type: String
+    description: "Full 40-character commit ID on main"
+    allowedPattern: "^[0-9a-f]{40}$"
+mainSteps:
+  - action: aws:runShellScript
+    name: deploy
+    inputs:
+      timeoutSeconds: "900"
+      runCommand:
+        - "sudo -u ubuntu -H /home/ubuntu/astra/deploy/update.sh {{ commit }}"
