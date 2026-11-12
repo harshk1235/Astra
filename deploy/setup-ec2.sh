@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup of a fresh Ubuntu 24.04 EC2 instance for Astra.
+# One-time setup of a fresh Ubuntu (24.04 or 26.04 LTS) EC2 instance for Astra.
 #   curl -fsSL https://raw.githubusercontent.com/harshk1235/Astra/main/deploy/setup-ec2.sh | bash
 # Safe to re-run. Afterwards: fill in ~/astra/.env,
 # then run ~/astra/deploy/update.sh
@@ -10,8 +10,16 @@ APP_DIR="$HOME/astra"
 
 echo "==> Installing Docker"
 sudo apt-get update -y
-sudo apt-get install -y docker.io docker-compose-v2 git
+sudo apt-get install -y git curl
+if ! command -v docker >/dev/null 2>&1; then
+  if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+    sudo apt-get install -y docker.io docker-compose-v2          # Ubuntu's own packages
+  else
+    curl -fsSL https://get.docker.com | sudo sh                 # Docker's installer (includes compose)
+  fi
+fi
 sudo systemctl enable --now docker
+sudo docker compose version >/dev/null || { echo "Docker Compose isn't available" >&2; exit 1; }
 sudo usermod -aG docker "$USER"          # run docker without sudo (after re-login)
 
 echo "==> Adding 2 GB swap (a micro instance has 1 GB RAM; Postgres + bot fit, swap is a safety net)"
