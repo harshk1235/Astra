@@ -38,13 +38,16 @@ def check_rank_change(
     Rule (mirrors in-game): you can only act on people *below* you, and you can
     raise them at most to your *own* rank.
       - Co-leader: Member->Elder, Elder->Co-leader, Elder->Member.
-      - Leader:    all of the above, Co-leader->Leader, Co-leader->Elder.
-      - Only server admins/owner can demote a Leader.
+      - Leader:    all of the above, Co-leader->Elder.
+      - Nobody promotes to Leader through the bot (it's done by hand in the
+        server); only server admins/owner can demote a Leader.
     Server admins (Discord 'Administrator' permission or the owner) bypass the
     rank check entirely; that is also how the first leaders get set up.
     """
     if abs(target_to - target_from) != 1:
         raise PermissionDenied("Ranks change one step at a time.")
+    if target_to == Rank.LEADER:
+        raise PermissionDenied("Leader is assigned manually in the server, not through the bot.")
     if actor_is_admin:
         return
     if actor_is_target:
@@ -101,26 +104,38 @@ def managed_role_ids(role_map: RoleMap) -> set[int]:
     return {role_id for ranks in role_map.values() for role_id in ranks.values()}
 
 
+# clan_tag -> {rank -> role id} for one clan's rank roles, and
+# rank -> role id for the family-wide rank roles ("[ArIX] Member", ...).
+CommonRoles = dict[Rank, int]
+
+
 def desired_role_ids(memberships: list[Membership], role_map: RoleMap,
-                     common_role_id: int | None = None) -> set[int]:
+                     common_roles: CommonRoles | int | None = None) -> set[int]:
     """Roles a person should have, from all their active clan memberships.
 
-    Roles stack: a PR Co-leader gets PR Member + PR Elder + PR Co-leader;
-    a PR Leader gets those three plus the shared Leader role.
-    Union across clans: someone who leads PR and is a member of DOP gets
-    {PR Member, PR Elder, PR Co-leader, Leader, DOP Member}. If they stop
-    leading PR but still lead DOP, Leader stays, because DOP still produces it.
+    Clan roles stack: a PR Co-leader gets PR Member + PR Elder + PR Co-leader.
+    Family roles stack the same way, by the person's highest rank in any
+    tracked clan: an Elder in PR and Member in DOP gets [ArIX] Member and
+    [ArIX] Elder. Union across clans for the clan roles.
+
+    The Leader role is never managed by the bot (it's assigned by hand in the
+    server), so a leader gets everything up to Co-leader here.
     """
+    if isinstance(common_roles, int):          # older single "common role"
+        common_roles = {Rank.MEMBER: common_roles}
     desired: set[int] = set()
+    best: Rank | None = None
     for m in memberships:
-        clan_roles = role_map.get(m.clan_tag, {})
-        for rank, role_id in clan_roles.items():
-            if rank <= m.rank:
+        if m.clan_tag not in role_map:
+            continue
+        best = m.rank if best is None else max(best, m.rank)
+        for rank, role_id in role_map[m.clan_tag].items():
+            if rank <= m.rank and rank != Rank.LEADER:
                 desired.add(role_id)
-    # The common family role (e.g. "[ArIX] Member"): anyone in at least one
-    # tracked clan that has roles configured.
-    if common_role_id is not None and any(m.clan_tag in role_map for m in memberships):
-        desired.add(common_role_id)
+    if best is not None:
+        for rank, role_id in (common_roles or {}).items():
+            if rank <= best and rank != Rank.LEADER:
+                desired.add(role_id)
     return desired
 
 

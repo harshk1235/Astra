@@ -18,13 +18,14 @@ from astra.tags import InvalidTag, normalize_tag, url_tag
 
 log = logging.getLogger(__name__)
 
+# No Leader: the Leader role is assigned by hand in the server and the bot never touches it.
 RANK_CHOICES = [
     app_commands.Choice(name="Member", value="member"),
     app_commands.Choice(name="Elder", value="elder"),
     app_commands.Choice(name="Co-leader", value="co_leader"),
-    app_commands.Choice(name="Leader (shared by all clans)", value="leader"),
 ]
-RANKS = {"member": Rank.MEMBER, "elder": Rank.ELDER, "co_leader": Rank.CO_LEADER, "leader": Rank.LEADER}
+RANKS = {"member": Rank.MEMBER, "elder": Rank.ELDER, "co_leader": Rank.CO_LEADER}
+RANK_LABELS = {Rank.MEMBER: "Member", Rank.ELDER: "Elder", Rank.CO_LEADER: "Co-Leader"}
 
 
 @app_commands.guild_only()
@@ -43,10 +44,10 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
     @app_commands.command(name="add", description="Track a clan (or rename / re-activate one)")
     @app_commands.describe(tag="Clan tag, e.g. #28VUPJRPU", alias="Short name used in commands and roles, e.g. PR",
                            member_role="Role for Members", elder_role="Role for Elders",
-                           coleader_role="Role for Co-leaders", leader_role="Shared Leader role (all clans)")
+                           coleader_role="Role for Co-leaders")
     async def add(self, interaction: discord.Interaction, tag: str, alias: str,
                   member_role: discord.Role | None = None, elder_role: discord.Role | None = None,
-                  coleader_role: discord.Role | None = None, leader_role: discord.Role | None = None):
+                  coleader_role: discord.Role | None = None):
         repo = await self._ready(interaction)
         if repo is None:
             return
@@ -63,7 +64,7 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
             name, members = data["name"], len(data.get("members") or [])
         except Exception:
             log.exception("clan lookup failed")
-            return await interaction.followup.send(f"Couldn't find clan `{tag}` on ClashKing. Check the tag.")
+            return await interaction.followup.send(f"Couldn't find clan `{tag}`. Check the tag.")
         try:
             clan = await repo.add_clan(tag, name, alias)
         except ValueError as e:
@@ -71,8 +72,6 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
         for rank, role in ((Rank.MEMBER, member_role), (Rank.ELDER, elder_role), (Rank.CO_LEADER, coleader_role)):
             if role:
                 await repo.set_clan_role(clan.tag, rank, role.id)
-        if leader_role:
-            await repo.set_leader_role(leader_role.id)
         await interaction.followup.send(
             f"✅ Tracking **{clan.name}** (`{clan.tag}`, {members} members) as **{clan.alias}**.\n"
             f"Its wars, CWL and donations are fetched from the next hourly run. "
@@ -89,26 +88,40 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
         found = await repo.find_clan(clan)
         if found is None:
             return await interaction.response.send_message(f"Unknown clan `{clan}`.", ephemeral=True)
-        if rank.value == "leader":
-            await repo.set_leader_role(role.id)
-            msg = f"✅ {role.mention} is now the Leader role for every clan."
-        else:
-            await repo.set_clan_role(found.tag, RANKS[rank.value], role.id)
-            msg = f"✅ {found.alias} {rank.name}s now get {role.mention}."
+        await repo.set_clan_role(found.tag, RANKS[rank.value], role.id)
+        msg = f"✅ {found.alias} {rank.name}s now get {role.mention}."
         await interaction.response.send_message(msg + " Run `/refreshroles` to apply it to everyone.",
                                                 allowed_mentions=discord.AllowedMentions.none())
 
-    @app_commands.command(name="commonrole", description="Role every member of any tracked clan gets")
-    @app_commands.describe(role="e.g. a [ArIX] Member role. Leave empty to stop giving one.")
-    async def commonrole(self, interaction: discord.Interaction, role: discord.Role | None = None):
+    @app_commands.command(name="commonrole", description="Family role for a rank, e.g. [ArIX] Elder")
+    @app_commands.describe(rank="Given to anyone with at least this rank in any tracked clan",
+                           role="e.g. [ArIX] Elder. Leave empty to stop giving one for this rank.")
+    @app_commands.choices(rank=RANK_CHOICES)
+    async def commonrole(self, interaction: discord.Interaction, rank: app_commands.Choice[str],
+                         role: discord.Role | None = None):
         repo = await self._ready(interaction)
         if repo is None:
             return
-        await repo.set_setting("common_role_id", str(role.id) if role else None)
-        msg = (f"✅ Everyone in a tracked clan now gets {role.mention}." if role
-               else "✅ No common role any more.")
+        await repo.set_common_role(RANKS[rank.value], role.id if role else None)
+        msg = (f"✅ Every {rank.name} (or higher) in any tracked clan now gets {role.mention}." if role
+               else f"✅ No family role for {rank.name}s any more.")
         await interaction.response.send_message(msg + " Run `/refreshroles` to apply it to everyone.",
                                                 allowed_mentions=discord.AllowedMentions.none())
+
+    @app_commands.command(name="statusroles", description="Roles changed by /joined and /remove")
+    @app_commands.describe(ex_member="Given by /remove when someone leaves their last clan; removed by /joined",
+                           just_joined="Removed by /joined")
+    async def statusroles(self, interaction: discord.Interaction, ex_member: discord.Role | None = None,
+                          just_joined: discord.Role | None = None):
+        repo = await self._ready(interaction)
+        if repo is None:
+            return
+        await repo.set_status_role("ex_member", ex_member.id if ex_member else None)
+        await repo.set_status_role("just_joined", just_joined.id if just_joined else None)
+        fmt = lambda r: r.mention if r else "*none*"
+        await interaction.response.send_message(
+            f"✅ Ex Member role: {fmt(ex_member)} · Just Joined role: {fmt(just_joined)}",
+            allowed_mentions=discord.AllowedMentions.none())
 
     @app_commands.command(name="list", description="Show tracked clans and their roles")
     async def list_(self, interaction: discord.Interaction):
@@ -123,10 +136,15 @@ class ClanCommands(commands.GroupCog, group_name="clan", group_description="Mana
             roles = role_map.get(c.tag, {})
             fmt = lambda r: f"<@&{roles[r]}>" if r in roles else "*not set*"
             lines.append(f"**{c.alias}** · {c.name} `{c.tag}`\n"
-                         f"Member {fmt(Rank.MEMBER)} · Elder {fmt(Rank.ELDER)} · "
-                         f"Co-leader {fmt(Rank.CO_LEADER)} · Leader {fmt(Rank.LEADER)}")
-        common = await repo.common_role_id()
-        lines.append(f"Common role for everyone: {f'<@&{common}>' if common else '*not set* (`/clan commonrole`)'}")
+                         f"Member {fmt(Rank.MEMBER)} · Elder {fmt(Rank.ELDER)} · Co-leader {fmt(Rank.CO_LEADER)}")
+        common = await repo.common_roles()
+        lines.append("**Family roles** (`/clan commonrole`)\n" + " · ".join(
+            f"{label} {f'<@&{common[r]}>' if r in common else '*not set*'}" for r, label in RANK_LABELS.items()))
+        ex, just = await repo.status_role("ex_member"), await repo.status_role("just_joined")
+        lines.append("**Status roles** (`/clan statusroles`)\n"
+                     f"Ex Member {f'<@&{ex}>' if ex else '*not set*'} · "
+                     f"Just Joined {f'<@&{just}>' if just else '*not set*'}")
+        lines.append("-# The Leader role is managed by hand; the bot never adds or removes it.")
         await interaction.response.send_message(
             embed=footer(discord.Embed(title="Tracked clans", description="\n\n".join(lines), color=0x000000)),
             allowed_mentions=discord.AllowedMentions.none())

@@ -102,9 +102,13 @@ def test_link_existing_member_with_rank():
     async def t(pool, repo):
         r = await leaders.link(repo, CO, NEW, TAG_NEW, INGAME, Rank.ELDER)
         assert await rank_of(repo, NEW.discord_id) == Rank.ELDER and "Elder" in r.message
-        with pytest.raises(PermissionDenied, match="above your own rank"):
-            await leaders.link(repo, CO, Target(98, "Y"), "#Q0Q0Q0Q0", {"#Q0Q0Q0Q0": InGameMember(
+        with pytest.raises(PermissionDenied, match="manually"):
+            await leaders.link(repo, ADMIN, Target(98, "Y"), "#Q0Q0Q0Q0", {"#Q0Q0Q0Q0": InGameMember(
                 "#Q0Q0Q0Q0", "Y", 16, PR)}, Rank.LEADER)
+        # A co-leader can add someone at their own rank.
+        await leaders.link(repo, CO, Target(98, "Y"), "#Q0Q0Q0Q0", {"#Q0Q0Q0Q0": InGameMember(
+            "#Q0Q0Q0Q0", "Y", 16, PR)}, Rank.CO_LEADER)
+        assert await rank_of(repo, 98) == Rank.CO_LEADER
         # Linking a second account doesn't change an existing rank.
         r = await leaders.link(repo, CO, NEW, "#C2C2C2C2", {"#C2C2C2C2": InGameMember("#C2C2C2C2", "Alt", 14, PR)})
         assert "already Elder" in r.message and await rank_of(repo, NEW.discord_id) == Rank.ELDER
@@ -163,18 +167,19 @@ def test_promote_demote_follow_in_game_rules():
         assert await rank_of(repo, 99) == Rank.CO_LEADER
         with pytest.raises(PermissionDenied):
             await leaders.change_rank(repo, CO, NEW, "PR", -1)                # but not demote them
+        for actor in (CO, LEAD, ADMIN):                                        # nobody makes leaders via the bot
+            with pytest.raises(PermissionDenied, match="manually"):
+                await leaders.change_rank(repo, actor, NEW, "PR", +1)
+        # A leader set by hand (or imported) can only be demoted by an admin.
+        await repo.set_membership(await repo.member_id_for(99), PR, Rank.LEADER, approved_by=1)
         with pytest.raises(PermissionDenied):
-            await leaders.change_rank(repo, CO, NEW, "PR", +1)                # or make leaders
-        await leaders.change_rank(repo, LEAD, NEW, "PR", +1)
-        assert await rank_of(repo, 99) == Rank.LEADER
-        with pytest.raises(PermissionDenied):
-            await leaders.change_rank(repo, LEAD, NEW, "PR", -1)              # only admins demote leaders
+            await leaders.change_rank(repo, LEAD, NEW, "PR", -1)
         with pytest.raises(LeaderError, match="already Leader"):
             await leaders.change_rank(repo, ADMIN, NEW, "PR", +1)
         await leaders.change_rank(repo, ADMIN, NEW, "PR", -1)
         assert await rank_of(repo, 99) == Rank.CO_LEADER
         with pytest.raises(PermissionDenied, match="own rank"):
-            await leaders.change_rank(repo, CO, Target(CO.discord_id, "x"), "PR", +1)
+            await leaders.change_rank(repo, CO, Target(CO.discord_id, "x"), "PR", -1)
     run(t)
 
 
@@ -196,16 +201,20 @@ def test_promote_needs_clan_when_in_two():
 def test_clans_aliases_and_shared_leader_role():
     async def t(pool, repo):
         await repo.set_clan_role(PR, Rank.MEMBER, 101)
-        await repo.set_leader_role(900)
-        new = await repo.add_clan("#2QQQQQQQ", "Third Clan", "TC")           # inherits the Leader role
+        await repo.set_clan_role(PR, Rank.ELDER, 102)
+        new = await repo.add_clan("#2QQQQQQQ", "Third Clan", "TC")
+        await repo.set_clan_role(new.tag, Rank.MEMBER, 301)
         roles = await repo.role_map()
-        assert roles[PR] == {Rank.MEMBER: 101, Rank.LEADER: 900} and roles[new.tag] == {Rank.LEADER: 900}
+        assert roles[PR] == {Rank.MEMBER: 101, Rank.ELDER: 102} and roles[new.tag] == {Rank.MEMBER: 301}
         assert (await repo.find_clan("tc")).tag == "#2QQQQQQQ"
         with pytest.raises(ValueError, match="already used"):
             await repo.add_clan("#2RRRRRRR", "Fourth", "pr")
         await repo.deactivate_clan(new.tag)
         assert new.tag not in await repo.role_map() and await repo.find_clan("TC") is None
-        assert 900 in await repo.all_managed_role_ids()      # still removable from people
+        assert 301 in await repo.all_managed_role_ids()      # still removable from people
+        # A leftover Leader role row is ignored: the bot never manages the Leader role.
+        await repo.set_leader_role(900)
+        assert Rank.LEADER not in (await repo.role_map())[PR] and 900 not in await repo.all_managed_role_ids()
     run(t)
 
 
@@ -229,4 +238,31 @@ def test_clan_people_groups_accounts():
         assert sorted(a.tag for a in people[99].accounts) == sorted([TAG_NEW, TAG_ALT])
         everyone = await repo.all_people_memberships()
         assert everyone[99][0].rank == Rank.MEMBER
+    run(t)
+
+
+def test_remove_reports_when_no_clans_are_left():
+    async def t(pool, repo):
+        await leaders.joined(repo, ADMIN, NEW, TAG_NEW, "PR", INGAME)
+        await leaders.joined(repo, ADMIN, NEW, TAG_ELSEWHERE, "DOP", INGAME)
+        r = await leaders.remove(repo, ADMIN, NEW, "PR")
+        assert r.no_clans_left is False                     # still in DOP: no Ex Member yet
+        r = await leaders.remove(repo, ADMIN, NEW, "DOP")
+        assert r.no_clans_left is True
+    run(t)
+
+
+def test_family_and_status_role_settings():
+    async def t(pool, repo):
+        await repo.set_setting("common_role_id", "777")      # the older single common role
+        assert await repo.common_roles() == {Rank.MEMBER: 777}
+        await repo.set_common_role(Rank.MEMBER, 701)
+        await repo.set_common_role(Rank.ELDER, 702)
+        await repo.set_common_role(Rank.CO_LEADER, 703)
+        assert await repo.common_roles() == {Rank.MEMBER: 701, Rank.ELDER: 702, Rank.CO_LEADER: 703}
+        assert {701, 702, 703} <= await repo.all_managed_role_ids()
+        await repo.set_common_role(Rank.ELDER, None)
+        assert Rank.ELDER not in await repo.common_roles()
+        await repo.set_status_role("ex_member", 881)
+        assert (await repo.status_role("ex_member"), await repo.status_role("just_joined")) == (881, None)
     run(t)

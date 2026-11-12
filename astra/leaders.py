@@ -46,6 +46,7 @@ class Result:
     clan: Clan | None = None
     rank: Rank | None = None                        # new rank (joined/linked/promoted/demoted)
     account: tuple[str, str] | None = None          # (tag, account name)
+    no_clans_left: bool = False                     # removed from their last tracked clan
 
 
 def person_name(display_name: str) -> str:
@@ -73,7 +74,7 @@ def _ingame_note(tag: str, clan: Clan, ingame: dict[str, InGameMember], clans: l
         other = next((c.alias for c in clans if c.tag == m.clan_tag), m.clan_tag)
         return f"{tag} is in {other} in-game, not {clan.alias}."
     return (f"{tag} isn't in {clan.alias}'s member list yet. If they just joined, "
-            "ClashKing can take a few minutes to update.")
+            "it can take a few minutes to update.")
 
 
 async def joined(repo: MembershipRepository, actor: Actor, target: Target, tag: str, clan_alias: str,
@@ -117,6 +118,8 @@ async def link(repo: MembershipRepository, actor: Actor, target: Target, tag: st
                       account=(tag, await _account_name(repo, tag)))
 
     rank = rank or Rank.MEMBER
+    if rank == Rank.LEADER:
+        raise PermissionDenied("Leader is assigned manually in the server, not through the bot.")
     actor_rank = await _actor_rank(repo, actor, clan.tag)
     if not actor.is_admin:
         check_can_accept(actor_rank)
@@ -184,7 +187,8 @@ async def remove(repo: MembershipRepository, actor: Actor, target: Target, clan_
     await repo.log_event(action="left", actor_discord_id=actor.discord_id, member_id=member_id,
                          clan_tag=clan.tag, from_rank=target_rank)
     return Result(f"👋 Removed <@{target.discord_id}> from **{clan.alias}**.", [target.discord_id],
-                  kind="removed", target_id=target.discord_id, clan=clan, rank=target_rank)
+                  kind="removed", target_id=target.discord_id, clan=clan, rank=target_rank,
+                  no_clans_left=not await repo.memberships_of(member_id))
 
 
 async def change_rank(repo: MembershipRepository, actor: Actor, target: Target, clan_alias: str | None,

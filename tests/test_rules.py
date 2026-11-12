@@ -23,7 +23,6 @@ ALLOWED = [
     (C, E, M),  # co-leader demotes elder -> member
     (L, M, E),
     (L, E, C),
-    (L, C, L),  # leader promotes co-leader -> leader
     (L, C, E),  # leader demotes co-leader
     (L, E, M),
 ]
@@ -36,6 +35,7 @@ DENIED = [
     (C, C, L),     # co-leader can't promote to leader
     (L, L, C),     # only admins demote a leader
     (L, M, C),     # skipping a rank
+    (L, C, L),     # nobody promotes to Leader: it's done by hand in the server
 ]
 
 
@@ -54,8 +54,13 @@ def test_admin_can_demote_leader():
     check_rank_change(None, L, C, actor_is_admin=True)
 
 
+def test_admin_cannot_promote_to_leader_either():
+    with pytest.raises(PermissionDenied, match="manually"):
+        check_rank_change(None, C, L, actor_is_admin=True)
+
+
 def test_admin_can_bootstrap_themselves():
-    check_rank_change(None, C, L, actor_is_target=True, actor_is_admin=True)
+    check_rank_change(None, E, C, actor_is_target=True, actor_is_admin=True)
     check_can_accept(None, actor_is_admin=True)
     check_can_remove(None, L, actor_is_admin=True)
 
@@ -107,18 +112,13 @@ def test_roles_stack_within_a_clan():
     assert desired_role_ids([Membership("#PR", M)], ROLE_MAP) == {101}
     assert desired_role_ids([Membership("#PR", E)], ROLE_MAP) == {101, 102}
     assert desired_role_ids([Membership("#PR", C)], ROLE_MAP) == {101, 102, 103}
-    assert desired_role_ids([Membership("#PR", L)], ROLE_MAP) == {101, 102, 103, LEADER_ROLE}
+    # The Leader role is never given by the bot: a leader gets everything up to Co-leader.
+    assert desired_role_ids([Membership("#PR", L)], ROLE_MAP) == {101, 102, 103}
 
 
 def test_desired_roles_union_across_clans():
     ms = [Membership("#PR", L), Membership("#DOP", M)]
-    assert desired_role_ids(ms, ROLE_MAP) == {101, 102, 103, LEADER_ROLE, 201}
-
-
-def test_shared_leader_role_kept_while_leading_any_clan():
-    # Leads both, then steps down in PR: still a leader via DOP.
-    ms = [Membership("#PR", C), Membership("#DOP", L)]
-    assert LEADER_ROLE in desired_role_ids(ms, ROLE_MAP)
+    assert desired_role_ids(ms, ROLE_MAP) == {101, 102, 103, 201}
 
 
 def test_promotion_adds_next_rank_role():
@@ -152,7 +152,15 @@ def test_unknown_clan_is_ignored():
     assert desired_role_ids([Membership("#GONE", M)], ROLE_MAP) == set()
 
 
-def test_common_role_only_with_a_configured_clan():
-    assert desired_role_ids([Membership("#PR", M)], ROLE_MAP, common_role_id=777) == {101, 777}
-    assert desired_role_ids([], ROLE_MAP, common_role_id=777) == set()
-    assert desired_role_ids([Membership("#GONE", M)], ROLE_MAP, common_role_id=777) == set()
+def test_family_roles_stack_by_best_rank_in_any_clan():
+    family = {M: 701, E: 702, C: 703}
+    assert desired_role_ids([Membership("#PR", M)], ROLE_MAP, family) == {101, 701}
+    # Elder in PR, Member in DOP: family roles follow the highest rank anywhere.
+    got = desired_role_ids([Membership("#PR", E), Membership("#DOP", M)], ROLE_MAP, family)
+    assert got == {101, 102, 201, 701, 702}
+    # A leader gets family roles up to Co-leader, never a Leader role.
+    assert desired_role_ids([Membership("#PR", L)], ROLE_MAP, family) == {101, 102, 103, 701, 702, 703}
+    assert desired_role_ids([], ROLE_MAP, family) == set()
+    assert desired_role_ids([Membership("#GONE", C)], ROLE_MAP, family) == set()
+    # The older single common role still works as the Member family role.
+    assert desired_role_ids([Membership("#PR", M)], ROLE_MAP, 777) == {101, 777}

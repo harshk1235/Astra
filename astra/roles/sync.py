@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import discord
 
-from astra.roles.rules import Membership, RoleMap, desired_role_ids, role_diff
+from astra.roles.rules import CommonRoles, Membership, Rank, RoleMap, desired_role_ids, role_diff
 
 log = logging.getLogger(__name__)
 
@@ -47,13 +47,16 @@ async def get_member(guild: discord.Guild, discord_id: int) -> discord.Member | 
 
 
 async def sync_member(guild: discord.Guild, discord_id: int, memberships: list[Membership],
-                      role_map: RoleMap, managed: set[int], *, common_role_id: int | None = None,
+                      role_map: RoleMap, managed: set[int], *, common_roles: CommonRoles | None = None,
                       reason: str = "Astra role sync") -> SyncOutcome:
     member = await get_member(guild, discord_id)
     if member is None:
         return SyncOutcome(found=False)
-    desired = desired_role_ids(memberships, role_map, common_role_id)
-    to_add, to_remove = role_diff(desired, {r.id for r in member.roles}, managed)
+    desired = desired_role_ids(memberships, role_map, common_roles)
+    # Never touch a Leader role, even if one slipped into the managed set:
+    # leaders are assigned by hand in the server.
+    leader_roles = {roles[Rank.LEADER] for roles in role_map.values() if Rank.LEADER in roles}
+    to_add, to_remove = role_diff(desired, {r.id for r in member.roles}, managed - leader_roles)
     add = [r for r in (guild.get_role(i) for i in to_add) if r is not None]       # skip deleted roles
     remove = [r for r in (guild.get_role(i) for i in to_remove) if r is not None]
     try:
@@ -67,3 +70,26 @@ async def sync_member(guild: discord.Guild, discord_id: int, memberships: list[M
             "above every clan role, and make sure I have the Manage Roles permission."
         )
     return SyncOutcome(True, tuple(r.name for r in add), tuple(r.name for r in remove))
+
+
+async def change_status_roles(guild: discord.Guild, discord_id: int, *, add: list[int | None] = (),
+                              remove: list[int | None] = (), reason: str) -> tuple[list[str], list[str]]:
+    """Add/remove one-off roles (Ex Member, Just Joined) that the sync doesn't
+    manage. Only changes what's needed. Returns (added names, removed names)."""
+    member = await get_member(guild, discord_id)
+    if member is None:
+        return [], []
+    have = {r.id for r in member.roles}
+    to_add = [r for r in (guild.get_role(i) for i in add if i) if r is not None and r.id not in have]
+    to_remove = [r for r in (guild.get_role(i) for i in remove if i) if r is not None and r.id in have]
+    try:
+        if to_add:
+            await member.add_roles(*to_add, reason=reason)
+        if to_remove:
+            await member.remove_roles(*to_remove, reason=reason)
+    except discord.Forbidden:
+        raise RoleSyncError(
+            "I'm not allowed to change some of these roles. In Server Settings → Roles, drag my role "
+            "above them, and make sure I have the Manage Roles permission."
+        )
+    return [r.name for r in to_add], [r.name for r in to_remove]

@@ -20,13 +20,14 @@ from astra.jobs.roster import fetch_clan_members, fetch_ingame
 from astra.leaders import Actor, LeaderError, Result, Target
 from astra.messages import clan_linked_embeds, clan_members_embeds, render_result
 from astra.roles.rules import MANAGER_MIN_RANK, PermissionDenied, Rank
-from astra.roles.sync import RoleSyncError, sync_member
+from astra.roles.sync import RoleSyncError, change_status_roles, sync_member
 
 log = logging.getLogger(__name__)
 
+# Leader isn't offered: it's assigned by hand in the server.
 RANK_CHOICES = [app_commands.Choice(name=n, value=v) for n, v in
-                (("Member", "member"), ("Elder", "elder"), ("Co-leader", "co_leader"), ("Leader", "leader"))]
-RANKS = {"member": Rank.MEMBER, "elder": Rank.ELDER, "co_leader": Rank.CO_LEADER, "leader": Rank.LEADER}
+                (("Member", "member"), ("Elder", "elder"), ("Co-leader", "co_leader"))]
+RANKS = {"member": Rank.MEMBER, "elder": Rank.ELDER, "co_leader": Rank.CO_LEADER}
 NO_PINGS = discord.AllowedMentions(users=False, roles=False, everyone=False)
 
 
@@ -57,19 +58,19 @@ class Leaders(commands.Cog):
             return await fetch_ingame(self.bot.clashking, clans), []
         except Exception:
             log.warning("ClashKing member lists unavailable", exc_info=True)
-            return {}, ["Couldn't reach ClashKing to check the tag against the clans' member lists."]
+            return {}, ["Couldn't check the tag against the clans' member lists right now."]
 
     async def sync_people(self, guild: discord.Guild, discord_ids: list[int], reason: str):
         """Sync roles for these people. Returns (roles added, roles removed, notes)."""
         repo = self.repo()
-        role_map, managed, common = await repo.role_map(), await repo.all_managed_role_ids(), await repo.common_role_id()
+        role_map, managed, common = await repo.role_map(), await repo.all_managed_role_ids(), await repo.common_roles()
         added, removed, notes = [], [], []
         for discord_id in discord_ids:
             member_id = await repo.member_id_for(discord_id)
             memberships = await repo.memberships_of(member_id) if member_id else []
             try:
                 outcome = await sync_member(guild, discord_id, memberships, role_map, managed,
-                                            common_role_id=common, reason=reason)
+                                            common_roles=common, reason=reason)
             except RoleSyncError as e:
                 notes.append(str(e))
                 continue
@@ -98,6 +99,20 @@ class Leaders(commands.Cog):
 
         added, removed, notes = await self.sync_people(interaction.guild, result.sync_discord_ids,
                                                        f"{reason} by {interaction.user}")
+        # One-off status roles: joining clears "Just Joined" / "Ex Member";
+        # leaving the last clan gives "Ex Member".
+        if result.target_id and result.kind in ("joined", "removed"):
+            repo = self.repo()
+            ex, just = await repo.status_role("ex_member"), await repo.status_role("just_joined")
+            change = ({"remove": [ex, just]} if result.kind == "joined"
+                      else {"add": [ex]} if result.no_clans_left else None)
+            if change:
+                try:
+                    a, r = await change_status_roles(interaction.guild, result.target_id,
+                                                     reason=f"{reason} by {interaction.user}", **change)
+                    added, removed = added + a, removed + r
+                except RoleSyncError as e:
+                    notes.append(str(e))
         content, embed = render_result(result, added, removed, result.warnings + notes,
                                        actor=interaction.user.display_name)
         if embed is not None and result.target_id:
@@ -208,14 +223,14 @@ class Leaders(commands.Cog):
             return
         repo = self.repo()
         people, role_map = await repo.all_people_memberships(), await repo.role_map()
-        managed, common = await repo.all_managed_role_ids(), await repo.common_role_id()
+        managed, common = await repo.all_managed_role_ids(), await repo.common_roles()
         if not role_map:
             return await interaction.followup.send("No clan roles are set yet. Use `/clan roles` first.")
         added = removed = missing = 0
         for discord_id, memberships in people.items():
             try:
                 outcome = await sync_member(interaction.guild, discord_id, memberships, role_map, managed,
-                                            common_role_id=common, reason=f"refreshroles by {interaction.user}")
+                                            common_roles=common, reason=f"refreshroles by {interaction.user}")
             except RoleSyncError as e:
                 return await interaction.followup.send(f"⚠️ Stopped: {e}")
             if not outcome.found:
@@ -248,7 +263,7 @@ class Leaders(commands.Cog):
             ingame = await fetch_clan_members(self.bot.clashking, found.tag)
         except Exception:
             log.exception("clan member list failed")
-            return await interaction.followup.send("❌ Couldn't get the member list from ClashKing. Try again later.")
+            return await interaction.followup.send("❌ Couldn't get the clan's member list right now. Try again later.")
         accounts = await self.repo().accounts_by_tag([m.tag for m in ingame])
         await interaction.followup.send(embeds=clan_members_embeds(found, ingame, accounts),
                                         allowed_mentions=NO_PINGS)
@@ -263,7 +278,7 @@ class Leaders(commands.Cog):
             in_clan = {m.tag for m in await fetch_clan_members(self.bot.clashking, found.tag)}
         except Exception:
             log.exception("clan member list failed")
-            return await interaction.followup.send("❌ Couldn't get the member list from ClashKing. Try again later.")
+            return await interaction.followup.send("❌ Couldn't get the clan's member list right now. Try again later.")
         people = await self.repo().clan_people(found.tag)
         await interaction.followup.send(embeds=clan_linked_embeds(found, people, in_clan), allowed_mentions=NO_PINGS)
 

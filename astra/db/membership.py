@@ -105,9 +105,12 @@ class MembershipRepository:
         )
 
     async def role_map(self) -> RoleMap:
+        """Clan rank roles. The Leader role is assigned by hand in the server, so
+        it's left out: the bot never adds or removes it."""
         rows = await self._pool.fetch(
             """SELECT r.clan_tag, r.rank::text AS rank, r.discord_role_id
-               FROM clan_roles r JOIN clans c ON c.tag = r.clan_tag WHERE c.active""")
+               FROM clan_roles r JOIN clans c ON c.tag = r.clan_tag
+               WHERE c.active AND r.rank <> 'leader'""")
         result: RoleMap = {}
         for r in rows:
             result.setdefault(r["clan_tag"], {})[DB_TO_RANK[r["rank"]]] = r["discord_role_id"]
@@ -116,9 +119,9 @@ class MembershipRepository:
     async def all_managed_role_ids(self) -> set[int]:
         """Every role the bot manages, including those of deactivated clans (so a
         removed clan's roles get taken away on the next refresh) and the common role."""
-        ids = {r["discord_role_id"] for r in await self._pool.fetch("SELECT discord_role_id FROM clan_roles")}
-        common = await self.common_role_id()
-        return ids | ({common} if common else set())
+        ids = {r["discord_role_id"] for r in await self._pool.fetch(
+            "SELECT discord_role_id FROM clan_roles WHERE rank <> 'leader'")}
+        return ids | set((await self.common_roles()).values())
 
     # --- bot-wide settings -----------------------------------------------------
 
@@ -133,10 +136,30 @@ class MembershipRepository:
                 """INSERT INTO bot_settings (key, value) VALUES ($1, $2)
                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", key, value)
 
-    async def common_role_id(self) -> int | None:
-        """The role everyone in any tracked clan gets (like "[ArIX] Member")."""
-        value = await self.get_setting("common_role_id")
+    async def common_roles(self) -> dict[Rank, int]:
+        """Family-wide rank roles ("[ArIX] Member", "[ArIX] Elder", "[ArIX] Co-Leader"),
+        given by a person's highest rank in any tracked clan."""
+        roles = {}
+        for rank in (Rank.MEMBER, Rank.ELDER, Rank.CO_LEADER):
+            value = await self.get_setting(f"common_role_{RANK_TO_DB[rank]}")
+            if value is None and rank == Rank.MEMBER:
+                value = await self.get_setting("common_role_id")   # the older single common role
+            if value:
+                roles[rank] = int(value)
+        return roles
+
+    async def set_common_role(self, rank: Rank, role_id: int | None) -> None:
+        await self.set_setting(f"common_role_{RANK_TO_DB[rank]}", str(role_id) if role_id else None)
+        if rank == Rank.MEMBER:
+            await self.set_setting("common_role_id", None)
+
+    async def status_role(self, name: str) -> int | None:
+        """'ex_member' or 'just_joined': one-off roles changed by /joined and /remove."""
+        value = await self.get_setting(f"{name}_role_id")
         return int(value) if value else None
+
+    async def set_status_role(self, name: str, role_id: int | None) -> None:
+        await self.set_setting(f"{name}_role_id", str(role_id) if role_id else None)
 
     # --- people and accounts ---------------------------------------------------
 

@@ -62,7 +62,7 @@ def test_removal_takes_clan_roles_but_not_others():
 
 
 def test_in_sync_member_makes_no_api_calls():
-    m = FakeMember({101, 102, 103, 900})
+    m = FakeMember({101, 102, 103, 900})     # 900 = Leader role: assigned by hand, left alone
     out = run(sync_member(FakeGuild({7: m}), 7, [Membership(PR, Rank.LEADER)], ROLE_MAP, MANAGED))
     assert m.calls == [] and (out.added, out.removed) == (0, 0)
 
@@ -83,13 +83,25 @@ def test_role_hierarchy_problem_gives_clear_message():
                         [Membership(PR, Rank.MEMBER)], ROLE_MAP, MANAGED))
 
 
-def test_common_role_given_with_first_clan_and_removed_with_last():
+def test_family_role_given_with_first_clan_and_removed_with_last():
     managed = MANAGED | {COMMON}
     m = FakeMember({BOOSTER})
     out = run(sync_member(FakeGuild({7: m}), 7, [Membership(PR, Rank.MEMBER)], ROLE_MAP, managed,
-                          common_role_id=COMMON))
+                          common_roles={Rank.MEMBER: COMMON}))
     assert m.calls == [("add", [101, COMMON])]
     assert sorted(out.added_roles) == ["role101", "role777"]
     m = FakeMember({101, COMMON, BOOSTER})
-    run(sync_member(FakeGuild({7: m}), 7, [], ROLE_MAP, managed, common_role_id=COMMON))
+    run(sync_member(FakeGuild({7: m}), 7, [], ROLE_MAP, managed, common_roles={Rank.MEMBER: COMMON}))
     assert m.calls == [("remove", [101, COMMON])]
+
+
+def test_status_roles_change_only_what_is_needed():
+    from astra.roles.sync import change_status_roles
+    EX, JUST = 881, 882
+    m = FakeMember({EX, BOOSTER})
+    guild = FakeGuild({7: m}, existing_roles={EX, JUST, BOOSTER})
+    added, removed = run(change_status_roles(guild, 7, remove=[EX, JUST], reason="t"))
+    assert (added, removed) == ([], ["role881"]) and m.calls == [("remove", [EX])]
+    m = FakeMember(set())
+    added, _ = run(change_status_roles(FakeGuild({7: m}, existing_roles={EX}), 7, add=[EX, None], reason="t"))
+    assert added == ["role881"]
